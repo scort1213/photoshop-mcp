@@ -86,7 +86,7 @@ export class PhotoshopMCPServer {
     const validate = new AjvJsonSchemaValidator().getValidator(tool.inputSchema);
     this.toolRegistry.register(tool.name, {
       tool,
-      handler: wrapToolHandler(tool.name, wrapDocumentIdHandler((args) => { const checked = validate(args); if (!checked.valid) throw new Error('invalid_arguments: ' + checked.errorMessage); return access.run(READ_TOOLS.has(tool.name) ? 'read' : 'write', () => documentManaged.run(['photoshop_open_image', 'photoshop_create_document', 'photoshop_set_active_document'].includes(tool.name), () => managedMutation.run(!ARTBOARD_NON_EDIT_TOOLS.has(tool.name), () => definition.handler(args)))); })),
+      handler: wrapToolHandler(tool.name, wrapDocumentIdHandler((args) => { const checked = validate(args); if (!checked.valid) throw new Error('invalid_arguments: ' + checked.errorMessage); return access.run(READ_TOOLS.has(tool.name) ? 'read' : 'write', () => documentManaged.run(['photoshop_open_image', 'photoshop_create_document', 'photoshop_set_active_document'].includes(tool.name), () => managedMutation.run(ARTBOARD_NON_EDIT_TOOLS.has(tool.name) ? false : tool.name, () => definition.handler(args)))); })),
     });
   }
 

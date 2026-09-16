@@ -142,3 +142,12 @@ ACL bookkeeping flag. No business directory permissions are changed. If local
 script execution is disabled, run this reviewed script with process-scoped
 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ...`; do not change the
 machine execution policy.
+
+`artboard_cases.py` tests the twelve scoped layer/text tools on a disposable
+real PSD copy at `<run-directory>/artboard-research/probe.psd`. Prepare that
+copy yourself; never point it at an original. The runner discards any open
+unsaved test probe, reopens the copy, preserves other documents, and executes
+three edit/save/close/reopen rounds with geometry, original structure, editable
+text and property assertions. Outputs go to a unique acceptance directory.
+Read-only inspection should avoid enumerating all pixel bounds of giant smart
+objects: such a scan can itself exceed the default COM deadline.

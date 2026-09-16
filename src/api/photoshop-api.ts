@@ -1,6 +1,6 @@
 import { access, documentManaged, managedMutation } from '../platform/operation-safety.js';
 import { randomUUID } from 'node:crypto';
-import { artboardMutationGuard } from '../core/artboard-guard.js';
+import { artboardMutationGuard, ARTBOARD_SCOPED_TOOLS } from '../core/artboard-guard.js';
 import { Logger } from '../utils/logger.js';
 import { PhotoshopConnection } from '../platform/connection.js';
 import { documentGuardScript, getTargetDocumentId } from '../core/document-target.js';
@@ -155,12 +155,17 @@ class ExtendScriptPhotoshopAPI implements PhotoshopAPI {
     try { app.preferences.smartQuotes = false; } catch (e) {}
 
     ${documentGuard}
-    ${managedMutation.getStore() ? artboardMutationGuard : ''}
+    ${managedMutation.getStore() ? `var __mcpArtboardAllowed = ${ARTBOARD_SCOPED_TOOLS.has(String(managedMutation.getStore()))};\n${artboardMutationGuard}` : ''}
 
     __mcpBodyEntered = true;
+    if (typeof __mcpArtboardScope !== 'undefined' && __mcpArtboardScope) __mcpArtboardScope.begin();
     var result = (function() {
       ${script}
     })();
+    if (typeof __mcpArtboardScope !== 'undefined' && __mcpArtboardScope) {
+      __mcpArtboardScope.restore();
+      __mcpArtboardScope.verify();
+    }
     if (typeof result === 'object' && result !== null) {
       return result.toSource ? result.toSource() : String(result);
     }
@@ -176,6 +181,7 @@ class ExtendScriptPhotoshopAPI implements PhotoshopAPI {
     if (__origAlert !== null) { alert = __origAlert; }
     if (__origConfirm !== null) { confirm = __origConfirm; }
     if (__origPrompt !== null) { prompt = __origPrompt; }
+    if (typeof __mcpArtboardScope !== 'undefined' && __mcpArtboardScope) __mcpArtboardScope.restore();
   }
 })();
     `.trim();

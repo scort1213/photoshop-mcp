@@ -16,13 +16,15 @@ Branch: `codex/boundary-hardening`, based on the Windows installation baseline.
   Document creation/open/switch tools manage their own target. Name-based layer
   lookup rejects duplicates. State now includes paths, saved flags and layer IDs.
 - Custom JSX accepts `timeout_ms` (1–120000). Scripts remain trusted code.
-- Managed edits reject artboard documents before mutation. In a real PS 23.0
-  file, adding an empty layer changed the document canvas width from 3394 to
-  1346 even though every original layer and artboard rectangle remained intact.
-  Read, preview, save, close and document-management tools remain available.
-  Arbitrary JSX is still trusted execution and is not a safe workaround for
-  this restriction. Recipes which open new documents internally are not
-  certified for artboard content; use verified non-artboard copies only.
+- Twelve managed layer/text operations support artboards through a scoped
+  override of Auto-Size Canvas, auto-nesting and auto-positioning. Original
+  settings are read before editing, disabled only during the call, and restored
+  on success or failure. Canvas dimensions and artboard rectangles must remain
+  identical; a mismatch or restoration failure reports an error and retains
+  uncertain-write protection. No rollback is implied. The allowlist lives in
+  src/core/artboard-guard.ts. Other managed edits, including document geometry
+  changes and recipes, still reject artboards before mutation. Arbitrary JSX
+  bypasses this scope and can trigger resizing even when renaming a layer.
 - `photoshop_save_document` stages PSD/PNG/JPEG outputs before publication,
   checks extension compatibility, and requires `overwrite:true` to replace an
   existing file. If a write times out, staging is retained for inspection while

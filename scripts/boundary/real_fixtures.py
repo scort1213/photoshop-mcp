@@ -23,16 +23,13 @@ def main(app):
                 opened=c.script('return app.open(new File('+safe_path+')).id;',target)
                 baseline=c.script("var d=app.activeDocument;var names=[];function scan(ls){for(var i=0;i<ls.length;i++){var l=ls[i];names.push([l.name,l.typename]);if(l.typename==='LayerSet')scan(l.layers);}}scan(d.layers);return {names:names,width:d.width.as('px'),height:d.height.as('px'),mode:String(d.mode),bits:String(d.bitsPerChannel)};",opened)
                 artboard=c.script("var groups=app.activeDocument.layerSets;for(var i=0;i<groups.length;i++){var r=new ActionReference();r.putIdentifier(charIDToTypeID('Lyr '),groups[i].id);if(executeActionGet(r).hasKey(stringIDToTypeID('artboard')))return true;}return false;",opened)
-                response=c.call('photoshop_create_text_layer',{'document_id':opened,'text':'边界验收副本','x':30,'y':60,'fontSize':20},error=artboard)
-                if artboard:
-                    assert 'unsupported_artboard_mutation' in str(response),response
-                    recover(c)
+                c.call('photoshop_create_text_layer',{'document_id':opened,'text':'边界验收副本','x':30,'y':60,'fontSize':20})
                 c.script("if(app.activeDocument.fullName.fsName.indexOf('Adobe-MCP-boundary-tests')<0)throw new Error('unsafe path');app.activeDocument.save();return app.activeDocument.saved;",opened)
                 c.call('photoshop_get_preview',{'document_id':opened,'max_dimension_px':480})
                 c.call('photoshop_close_document',{'document_id':opened,'save':False})
                 opened=c.script('return app.open(new File('+safe_path+')).id;',target)
                 after=c.script("var d=app.activeDocument;var names=[];var testText='';function scan(ls){for(var i=0;i<ls.length;i++){var l=ls[i];if(l.name==='边界验收副本')testText=l.textItem.contents;if(l.name!=='边界验收副本')names.push([l.name,l.typename]);if(l.typename==='LayerSet')scan(l.layers);}}scan(d.layers);return {names:names,width:d.width.as('px'),height:d.height.as('px'),mode:String(d.mode),bits:String(d.bitsPerChannel),testText:testText};",opened)
-                assert after.pop('testText')==('' if artboard else '边界验收副本')
+                assert after.pop('testText')=='边界验收副本'
                 assert after==baseline,'PSD/PSB structure changed unexpectedly'
                 c.call('photoshop_close_document',{'document_id':opened,'save':False})
             else:
@@ -47,7 +44,7 @@ def main(app):
                 assert after==baseline,(baseline,after)
                 c.script('app.activeDocument.close(SaveOptions.DONOTSAVECHANGES);"closed";',path)
             with open(fixture['source'],'rb') as source:assert hashlib.file_digest(source,'sha256').hexdigest()==fixture['sha256']
-            evidence.append({'file':Path(path).name,'bytes':fixture['bytes'],'seconds':time.time()-started,'before_resources':before_resources,'save_reopen_structure':'passed','edit_boundary':'unsupported_artboard_rejected' if app=='ps' and artboard else 'editable_text_passed','preview':'not_verified' if app=='ai' and '--skip-preview' in sys.argv else 'passed','original_hash':'unchanged'})
+            evidence.append({'file':Path(path).name,'bytes':fixture['bytes'],'seconds':time.time()-started,'before_resources':before_resources,'save_reopen_structure':'passed','edit_boundary':'editable_text_passed','preview':'not_verified' if app=='ai' and '--skip-preview' in sys.argv else 'passed','original_hash':'unchanged'})
             (ROOT/f'{app}-real-fixtures.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding='utf-8')
             print(app,'REAL FIXTURE PASS',Path(path).name,flush=True)
     finally:c.close()
