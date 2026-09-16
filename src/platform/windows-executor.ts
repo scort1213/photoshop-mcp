@@ -65,7 +65,13 @@ export class WindowsExecutor implements ScriptExecutor {
             throw new Error('queue_timeout: operation was not dispatched');
           }
           dispatched = true;
-          result = await this.executeScript(script, lease.child);
+          result = await this.executeScript(script, lease.child, () => {
+            // Filesystem preparation can stall after the queue lease is taken.
+            // Do not start a new COM process after the public deadline expires.
+            if (expired || Date.now() >= deadline) {
+              throw new Error('queue_timeout: bridge preparation expired before Adobe dispatch');
+            }
+          });
           clearTimeout(timeoutId);
           if (!expired && mode === 'write') await clearQuarantine();
         } catch (error) {
@@ -107,7 +113,7 @@ export class WindowsExecutor implements ScriptExecutor {
     this.isProcessing = false;
   }
 
-  protected async executeScript(script: string, onChild: (pid: number) => Promise<void>): Promise<unknown> {
+  protected async executeScript(script: string, onChild: (pid: number) => Promise<void>, assertDispatchAllowed: () => void = () => {}): Promise<unknown> {
     // For Windows, we'll use a combination of VBScript/JScript to communicate with Photoshop via COM
     // Write script to temporary file
     const directory = await mkdtemp(join(tmpdir(), 'photoshop-mcp-'));
@@ -127,6 +133,7 @@ export class WindowsExecutor implements ScriptExecutor {
         // Use a Unicode result file: cscript stdout uses a locale-dependent
         // code page, and //U can emit no output through Node pipes on Windows.
         try {
+          assertDispatchAllowed();
           const execution = execFileAsync('cscript.exe', ['//nologo', vbsPath], { windowsHide: true });
           // Attach the rejection handler before awaiting filesystem work.
           const completion = execution.then(() => null, (error: unknown) => error);
