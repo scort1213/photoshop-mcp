@@ -127,3 +127,18 @@ reject before the script body without poisoning the shared write state, while
 a body that modifies the test layer and then fails remains quarantined. It
 requires multiple already-open documents and an existing test target inside the
 run directory. It never recovers a pre-existing unknown state at startup.
+
+`flat_export_cases.py <test-document-id>` verifies PNG transparency, JPEG pixel
+comparison, and Adobe reopen/close of only the exported test copies for three
+rounds. It waits up to 60 seconds on read-only `application_busy` readiness
+rejections; no edit/open/save/close request is automatically retried.
+
+On Windows, `readonly_save_case.ps1 -RunRoot <run-directory> -TargetId <id>
+-PythonCommand <MCP-python-path>` creates a unique empty child directory, denies
+the current account write access there, verifies three real MCP save failures
+leave no partial files, and restores the original access entries/owner/group in
+`finally`. A write probe verifies restoration. The OS may set its auto-inherited
+ACL bookkeeping flag. No business directory permissions are changed. If local
+script execution is disabled, run this reviewed script with process-scoped
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File ...`; do not change the
+machine execution policy.
