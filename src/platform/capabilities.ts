@@ -13,6 +13,7 @@ export interface PhotoshopCapabilities {
   features: {
     select_subject_v2: boolean;
     generative_fill: boolean;
+    generate_image: boolean;
     generative_remove: boolean;
     generative_expand: boolean;
     generative_upscale: boolean;
@@ -52,6 +53,8 @@ export function getPhotoshopCapabilities(version: string): PhotoshopCapabilities
     features: {
       select_subject_v2: selectSubjectV2,
       generative_fill: generativeFill,
+      // Generate Image shipped separately from Generative Fill in Photoshop 25.11.
+      generate_image: major > 25 || (major === 25 && parsed.minor >= 11),
       generative_remove: generativeRemove,
       generative_expand: generativeExpand,
       generative_upscale: generativeUpscale,

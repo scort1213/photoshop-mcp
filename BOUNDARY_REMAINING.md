@@ -56,3 +56,21 @@ The runners stop on unexpected results and retain evidence. A failed run may lea
 After updates run the unit suite, TypeScript build, lint, prompt-coverage and package checks, then rerun the exact formerly failing real-app cases three times. Mocked plugin tests do not establish a real UXP connection. Stdio test clients do not establish native Codex tool acceptance.
 
 Private images, PSB recovery copies, original hashes and detailed call logs stay outside the repository.
+# Follow-up: angle geometry and version eligibility
+
+The follow-up fixes Generate Image's separate Photoshop 25.11 version floor and
+the previously ignored angle override in both gradient-mask tools. Explicit angles
+use pixel-space geometry (0 degrees right, 90 degrees up); omitted angles retain
+existing directional behavior. Unconfirmed gradient results are errors.
+
+193 unit tests passed in each of three consecutive runs; TypeScript, ESLint,
+prompt coverage and package checks passed. These are not new real-app passes.
+The new `scripts/boundary/gradient_angle_cases.py` acceptance runner stopped on
+`application_busy` at document enumeration before any edit. Generate Image's live
+rejection check was likewise blocked before its version gate. Computer Use still
+fails during kernel asset creation, including after a kernel reset. Persistent
+quarantine was not cleared and the timed-out action was not replayed.
+
+The recorded count remains 115 scoped passes, 9 outstanding, and 4 deferred.
+Angle overrides require real alpha-pixel and PSD-reopen acceptance before claiming
+them as verified. Private evidence is in the local `20260916-execution` run.

@@ -5,6 +5,7 @@
 
 import { jsString, jsStringLiteral } from '../utils/js-string.js';
 import { artboardMutationGuard } from '../core/artboard-guard.js';
+import { gradientAngleCoordinates } from '../utils/gradient-angle.js';
 
 /** Avoid preference-driven substitutions while retaining the user's preference. */
 function literalTextAssignment(item: string, text: string): string {
@@ -2284,6 +2285,7 @@ export const ExtendScriptSnippets = {
     };
     const endpoints = gradientEndpoints[direction];
     const angle = angleDeg ?? (direction === 'left_to_right' || direction === 'right_to_left' ? 0 : 90);
+    const angleCoordinates = angleDeg === undefined ? '' : gradientAngleCoordinates(angleDeg, startPct, endPct);
 
     return `
     ${helperFunctions}
@@ -2317,6 +2319,7 @@ export const ExtendScriptSnippets = {
     var fromYPx = docH * (${endpoints.fromV} / 100.0);
     var toXPx = docW * (${endpoints.toH} / 100.0);
     var toYPx = docH * (${endpoints.toV} / 100.0);
+    ${angleCoordinates}
     __mcp_gradientFillLayerMask(fromXPx, fromYPx, toXPx, toYPx, ${endpoints.reverse});
     } finally {
       if (previousChannels) doc.activeChannels = previousChannels;

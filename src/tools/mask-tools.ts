@@ -119,7 +119,7 @@ export function createMaskTools(connection: PhotoshopConnection): ToolDefinition
             },
             angle_deg: {
               type: 'number',
-              description: 'Override gradient angle in degrees (optional)',
+              description: 'Optional angle override: 0 points right, 90 points up; overrides direction',
             },
           },
         },
@@ -206,6 +206,9 @@ async function applyGradientMask(
   connection: PhotoshopConnection,
   args: Record<string, unknown>
 ): Promise<ToolResult> {
+  if (args.angle_deg !== undefined && (typeof args.angle_deg !== 'number' || !Number.isFinite(args.angle_deg))) {
+    return atomicFailure({ ok: false, code: 'invalid_arguments', message: 'angle_deg must be a finite number' });
+  }
   const direction = parseGradientDirection(args.direction);
   const startPct = clampInt(args.start_pct, 0, 100, 0);
   const endPct = clampInt(args.end_pct, 0, 100, 100);
@@ -224,6 +227,9 @@ async function applyGradientMask(
     const parsed = parseSnippetResult(raw);
     if (!parsed) {
       return atomicFailureFromError(new Error(`Snippet returned unparseable payload: ${String(raw)}`));
+    }
+    if (parsed.ok === false || parsed.applied !== true) {
+      return atomicFailureFromError(new Error(`${String(parsed.code || 'partial_completion')}: ${String(parsed.message || 'Gradient application was not confirmed')}`));
     }
     return atomicSuccess('Gradient applied on layer mask', {
       ...parsed,

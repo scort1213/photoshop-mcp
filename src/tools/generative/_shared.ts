@@ -25,7 +25,7 @@ export async function runGenerativeSnippet(
 
 export async function requireGenerativeCapability(
   connection: PhotoshopConnection,
-  feature: 'generative_fill' | 'generative_upscale'
+  feature: 'generative_fill' | 'generative_upscale' | 'generate_image'
 ): Promise<ToolResult | null> {
   const version = await connection.getVersion();
   const caps = getPhotoshopCapabilities(version);

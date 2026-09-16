@@ -151,7 +151,7 @@ export function createGenerativeTools(connection: PhotoshopConnection): ToolDefi
           'Generate image content from a text prompt (text-to-image) on blank or active document.\n\n' +
           'Use when: creating new imagery from a description.\n\n' +
           'Returns: { ok, summary, details }.\n' +
-          'Preconditions: generative_fill capability; Adobe generative credits.',
+          'Preconditions: generate_image capability (Photoshop 25.11+); Adobe generative credits.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -258,7 +258,7 @@ async function generateImage(
   connection: PhotoshopConnection,
   args: Record<string, unknown>
 ): Promise<ToolResult> {
-  const blocked = await requireGenerativeCapability(connection, 'generative_fill');
+  const blocked = await requireGenerativeCapability(connection, 'generate_image');
   if (blocked) return blocked;
 
   const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : '';

@@ -1,6 +1,8 @@
 import { ToolDefinition, ToolResult } from '../../core/tool-registry.js';
 import { PhotoshopConnection } from '../../platform/connection.js';
 import type { GradientMaskDirection } from '../../api/extendscript.js';
+import { gradientAngleCoordinates } from '../../utils/gradient-angle.js';
+import { atomicFailure } from '../atomic-shared.js';
 import {
   clampInt,
   executeRecipe,
@@ -60,7 +62,7 @@ export function bindGradientFade(connection: PhotoshopConnection): ToolDefinitio
           },
           angle_deg: {
             type: 'number',
-            description: 'Optional gradient angle override in degrees',
+            description: 'Optional angle override: 0 points right, 90 points up; overrides direction',
           },
         },
       },
@@ -73,12 +75,15 @@ async function runGradientFade(
   connection: PhotoshopConnection,
   args: Record<string, unknown>
 ): Promise<ToolResult> {
+  if (args.angle_deg !== undefined && (typeof args.angle_deg !== 'number' || !Number.isFinite(args.angle_deg))) {
+    return atomicFailure({ ok: false, code: 'invalid_arguments', message: 'angle_deg must be a finite number' });
+  }
   const direction = parseGradientDirection(args.direction);
   const startPct = clampInt(args.start_pct, 0, 100, 0);
   const endPct = clampInt(args.end_pct, 0, 100, 100);
   const angle =
     typeof args.angle_deg === 'number' && Number.isFinite(args.angle_deg)
-      ? Math.round(args.angle_deg)
+      ? args.angle_deg
       : gradientMaskDefaultAngle(direction);
   const endpoints = gradientMaskAxisPercents(direction, startPct, endPct);
 
@@ -105,6 +110,7 @@ async function runGradientFade(
     var fromYPx = docH * (${endpoints.fromV} / 100.0);
     var toXPx = docW * (${endpoints.toH} / 100.0);
     var toYPx = docH * (${endpoints.toV} / 100.0);
+    ${args.angle_deg === undefined ? '' : gradientAngleCoordinates(angle, startPct, endPct)}
     __mcp_gradientFillLayerMask(fromXPx, fromYPx, toXPx, toYPx, ${endpoints.reverse ? 'true' : 'false'});
 
     try {
