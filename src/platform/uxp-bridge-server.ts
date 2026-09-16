@@ -24,6 +24,7 @@ const DEFAULT_PORT = Number.parseInt(process.env.PHOTOSHOP_UXP_BRIDGE_PORT ?? '3
 
 let server: Server | null = null;
 let listenPort = DEFAULT_PORT;
+let lastPluginPollAt = 0;
 const pendingCommands: UxpBridgeCommand[] = [];
 const results = new Map<string, UxpBridgeResult>();
 
@@ -48,11 +49,16 @@ export async function ensureUxpBridgeServer(): Promise<number> {
       const url = new URL(req.url ?? '/', `http://127.0.0.1:${listenPort}`);
 
       if (req.method === 'GET' && url.pathname === '/health') {
-        json(res, 200, { ok: true, pending: pendingCommands.length });
+        json(res, 200, {
+          ok: true,
+          pending: pendingCommands.length,
+          pluginConnected: lastPluginPollAt > 0 && Date.now() - lastPluginPollAt < 15_000,
+        });
         return;
       }
 
       if (req.method === 'GET' && url.pathname === '/poll') {
+        lastPluginPollAt = Date.now();
         const cmd = pendingCommands.shift();
         if (!cmd) {
           res.writeHead(204);
@@ -132,4 +138,5 @@ export async function shutdownUxpBridgeServer(): Promise<void> {
   if (!server) return;
   await new Promise<void>((resolve) => server!.close(() => resolve()));
   server = null;
+  lastPluginPollAt = 0;
 }

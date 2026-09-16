@@ -66,6 +66,16 @@ export class PhotoshopConnection {
         this.photoshopInfo = await this.detector.detect();
       }
 
+      // Windows discovery can return a marketing year from the installation
+      // path. Query the host before applying numeric feature-version gates.
+      if (platform() === 'win32' && /^20\d{2}$/.test(this.photoshopInfo.version)) {
+        const runtimeVersion = String(await this.executeScript('app.version')).trim();
+        if (!/^\d{1,3}(?:\.\d+)*$/.test(runtimeVersion)) {
+          throw new Error(`Unexpected Photoshop runtime version: ${runtimeVersion}`);
+        }
+        this.photoshopInfo.version = runtimeVersion;
+      }
+
       return this.photoshopInfo?.version || 'Unknown';
     } catch (error) {
       this.logger.error('Failed to get version:', error);

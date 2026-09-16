@@ -15,8 +15,8 @@ export async function isUxpBridgeReachable(): Promise<boolean> {
     });
     clearTimeout(timer);
     if (!res.ok) return false;
-    const body = (await res.json()) as { ok?: boolean };
-    return body.ok === true;
+    const body = (await res.json()) as { ok?: boolean; pluginConnected?: boolean };
+    return body.ok === true && body.pluginConnected === true;
   } catch {
     return false;
   }

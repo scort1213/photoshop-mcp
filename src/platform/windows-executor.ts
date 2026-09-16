@@ -1,6 +1,6 @@
-import { exec, spawn } from 'child_process';
+import { exec, execFile, spawn } from 'child_process';
 import { promisify } from 'util';
-import { writeFile, unlink } from 'fs/promises';
+import { readFile, writeFile, unlink } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { prefixExtendScriptBom } from '../utils/extendscript-file.js';
@@ -9,6 +9,7 @@ import { Logger } from '../utils/logger.js';
 import { ScriptExecutor } from './script-executor.js';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export class WindowsExecutor implements ScriptExecutor {
   private logger: Logger;
@@ -72,24 +73,27 @@ export class WindowsExecutor implements ScriptExecutor {
       await writeFile(tempScriptPath, prefixExtendScriptBom(script), 'utf8');
 
       // Use VBScript to execute the JSX script via COM
-      const vbsScript = this.createVBSWrapper(tempScriptPath);
       const vbsPath = join(tmpdir(), `photoshop-vbs-${Date.now()}.vbs`);
+      const resultPath = `${vbsPath}.result`;
+      const vbsScript = this.createVBSWrapper(tempScriptPath, resultPath);
       
-      await writeFile(vbsPath, vbsScript, 'utf8');
+      await writeFile(vbsPath, '\uFEFF' + vbsScript, 'utf16le');
 
       try {
-        // Execute VBScript
-        const { stdout, stderr } = await execAsync(`cscript //nologo "${vbsPath}"`);
-        
-        if (stderr) {
-          this.logger.warn('Script execution warning:', stderr);
+        // Use a Unicode result file: cscript stdout uses a locale-dependent
+        // code page, and //U can emit no output through Node pipes on Windows.
+        try {
+          await execFileAsync('cscript.exe', ['//nologo', vbsPath], { windowsHide: true });
+        } catch (error) {
+          const details = await readFile(resultPath, 'utf16le').catch(() => '');
+          if (details) this.parseResult(details);
+          throw error;
         }
-
-        // Parse result
-        return this.parseResult(stdout);
+        return this.parseResult(await readFile(resultPath, 'utf16le'));
       } finally {
         // Cleanup VBS file
         await unlink(vbsPath).catch(() => {});
+        await unlink(resultPath).catch(() => {});
       }
     } finally {
       // Cleanup JSX file
@@ -97,14 +101,20 @@ export class WindowsExecutor implements ScriptExecutor {
     }
   }
 
-  private createVBSWrapper(jsxPath: string): string {
+  private createVBSWrapper(jsxPath: string, resultPath: string): string {
     return `
+Sub Emit(value)
+  Dim output
+  Set output = CreateObject("Scripting.FileSystemObject").CreateTextFile("${resultPath.replace(/"/g, '""')}", True, True)
+  output.Write CStr(value)
+  output.Close
+End Sub
 On Error Resume Next
 Dim photoshopApp
 Set photoshopApp = CreateObject("Photoshop.Application")
 
 If Err.Number <> 0 Then
-    WScript.Echo "ERROR: Failed to connect to Photoshop - " & Err.Description
+    Emit "ERROR: Failed to connect to Photoshop - " & Err.Description
     WScript.Quit 1
 End If
 
@@ -113,10 +123,10 @@ Dim result
 result = photoshopApp.DoJavaScript("$.evalFile('" & Replace("${jsxPath}", "\\", "\\\\") & "')")
 
 If Err.Number <> 0 Then
-    WScript.Echo "ERROR: " & Err.Description
+    Emit "ERROR: " & Err.Description
     WScript.Quit 1
 Else
-    WScript.Echo result
+    Emit result
 End If
 `.trim();
   }
