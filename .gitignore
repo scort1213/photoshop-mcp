@@ -3,7 +3,6 @@ node_modules/
 package-lock.json
 !site/package-lock.json
 yarn.lock
-pnpm-lock.yaml
 
 
 # Build outputs
@@ -37,6 +36,7 @@ yarn-error.log*
 
 # Testing
 coverage/
+scripts/boundary/__pycache__/
 .nyc_output/
 
 # Temporary

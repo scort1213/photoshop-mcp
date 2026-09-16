@@ -1,11 +1,12 @@
 import { exec, execFile, spawn } from 'child_process';
 import { promisify } from 'util';
-import { readFile, writeFile, unlink } from 'fs/promises';
+import { readFile, writeFile, unlink, mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { prefixExtendScriptBom } from '../utils/extendscript-file.js';
 import { parseExtendScriptPayload } from '../utils/extendscript-result.js';
 import { Logger } from '../utils/logger.js';
+import { acquireLease, assertSafe, quarantine, clearQuarantine, access } from './operation-safety.js';
 import { ScriptExecutor } from './script-executor.js';
 
 const execAsync = promisify(exec);
@@ -21,25 +22,49 @@ export class WindowsExecutor implements ScriptExecutor {
   }
 
   async execute(script: string, timeout: number = 30000): Promise<unknown> {
+    if (!Number.isFinite(timeout) || timeout <= 0) throw new Error('invalid_timeout');
+    const deadline = Date.now() + timeout;
+    const mode = access.getStore() || 'write';
     return new Promise((resolve, reject) => {
+      let expired = false;
+      let dispatched = false;
+      let timeoutWork: Promise<void> | undefined;
       const timeoutId = setTimeout(() => {
-        reject(new Error('Script execution timeout'));
+        expired = true;
+        timeoutWork = (async () => {
+          if (dispatched && mode === 'write') await quarantine('Script exceeded deadline; execution may still be running');
+          reject(new Error(dispatched ? 'outcome_unknown: execution timeout; inspect state before recovery' : 'queue_timeout: operation was not dispatched'));
+        })().catch(reject);
       }, timeout);
-
-      this.scriptQueue.push(async () => {
+      this.scriptQueue.push(async () => access.run(mode, async () => {
+        if (expired || Date.now() >= deadline) { clearTimeout(timeoutId); reject(new Error('queue_timeout: operation was not dispatched')); return; }
+        let lease: Awaited<ReturnType<typeof acquireLease>> | undefined;
+        let result: unknown;
+        let failure: unknown;
         try {
-          const result = await this.executeScript(script);
+          lease = await acquireLease(deadline);
+          if (expired || Date.now() >= deadline) throw new Error('queue_timeout: operation was not dispatched');
+          await assertSafe();
+          if (expired || Date.now() >= deadline) throw new Error('queue_timeout: operation was not dispatched');
+          if (mode === 'write') await quarantine('Write in progress; inspect state if interrupted');
+          if (expired || Date.now() >= deadline) {
+            if (mode === 'write') await clearQuarantine();
+            throw new Error('queue_timeout: operation was not dispatched');
+          }
+          dispatched = true;
+          result = await this.executeScript(script, lease.child);
           clearTimeout(timeoutId);
-          resolve(result);
-          return result;
-        } catch (error) {
+          if (!expired && mode === 'write') await clearQuarantine();
+        } catch (error) { failure = error; }
+        finally {
           clearTimeout(timeoutId);
-          reject(error);
-          throw error;
+          await timeoutWork;
+          if (lease) await lease.release();
         }
-      });
-
-      this.processQueue();
+        if (failure) reject(failure);
+        else if (!expired) resolve(result);
+      }).catch(reject));
+      void this.processQueue();
     });
   }
 
@@ -64,16 +89,17 @@ export class WindowsExecutor implements ScriptExecutor {
     this.isProcessing = false;
   }
 
-  private async executeScript(script: string): Promise<unknown> {
+  protected async executeScript(script: string, onChild: (pid: number) => Promise<void>): Promise<unknown> {
     // For Windows, we'll use a combination of VBScript/JScript to communicate with Photoshop via COM
     // Write script to temporary file
-    const tempScriptPath = join(tmpdir(), `photoshop-script-${Date.now()}.jsx`);
+    const directory = await mkdtemp(join(tmpdir(), 'photoshop-mcp-'));
+    const tempScriptPath = join(directory, 'script.jsx');
     
     try {
       await writeFile(tempScriptPath, prefixExtendScriptBom(script), 'utf8');
 
       // Use VBScript to execute the JSX script via COM
-      const vbsPath = join(tmpdir(), `photoshop-vbs-${Date.now()}.vbs`);
+      const vbsPath = join(directory, 'bridge.vbs');
       const resultPath = `${vbsPath}.result`;
       const vbsScript = this.createVBSWrapper(tempScriptPath, resultPath);
       
@@ -83,7 +109,14 @@ export class WindowsExecutor implements ScriptExecutor {
         // Use a Unicode result file: cscript stdout uses a locale-dependent
         // code page, and //U can emit no output through Node pipes on Windows.
         try {
-          await execFileAsync('cscript.exe', ['//nologo', vbsPath], { windowsHide: true });
+          const execution = execFileAsync('cscript.exe', ['//nologo', vbsPath], { windowsHide: true });
+          // Attach the rejection handler before awaiting filesystem work.
+          const completion = execution.then(() => null, (error: unknown) => error);
+          let metadataError: unknown;
+          try { if (execution.child.pid) await onChild(execution.child.pid); } catch (error) { metadataError = error; }
+          const executionError = await completion;
+          if (metadataError) throw new Error('outcome_unknown: failed to record Adobe bridge process');
+          if (executionError) throw executionError;
         } catch (error) {
           const details = await readFile(resultPath, 'utf16le').catch(() => '');
           if (details) this.parseResult(details);
@@ -97,11 +130,12 @@ export class WindowsExecutor implements ScriptExecutor {
       }
     } finally {
       // Cleanup JSX file
-      await unlink(tempScriptPath).catch(() => {});
+      await rm(directory, { recursive: true, force: true });
     }
   }
 
   private createVBSWrapper(jsxPath: string, resultPath: string): string {
+    const loadScript = `$.evalFile(${JSON.stringify(jsxPath)})`.replace(/"/g, '""');
     return `
 Sub Emit(value)
   Dim output
@@ -120,7 +154,7 @@ End If
 
 ' Execute the JSX script
 Dim result
-result = photoshopApp.DoJavaScript("$.evalFile('" & Replace("${jsxPath}", "\\", "\\\\") & "')")
+result = photoshopApp.DoJavaScript("${loadScript}")
 
 If Err.Number <> 0 Then
     Emit "ERROR: " & Err.Description

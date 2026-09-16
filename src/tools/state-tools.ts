@@ -45,6 +45,8 @@ export function createStateTools(connection: PhotoshopConnection): ToolDefinitio
             max_dimension_px: {
               type: 'number',
               description: 'Maximum long edge in pixels (default 1024)',
+              minimum: 1,
+              maximum: 8192,
               default: 1024,
             },
             quality: {
@@ -79,6 +81,9 @@ async function getState(connection: PhotoshopConnection): Promise<ToolResult> {
   try {
     const raw = await runScript(connection, ExtendScriptSnippets.getState());
     const result = parseExtendScriptPayload(raw);
+    if (!result || typeof result !== 'object' || typeof (result as { hasDocument?: unknown }).hasDocument !== 'boolean') {
+      throw new Error('invalid_state_response: Photoshop did not return a usable document snapshot');
+    }
     return {
       content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
     };

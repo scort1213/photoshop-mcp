@@ -25,25 +25,9 @@ export interface PhotoshopCapabilities {
 }
 
 export function parsePhotoshopVersion(version: string): ParsedPhotoshopVersion {
-  const numeric = version.match(/(\d+)\.?(\d*)/);
-  if (numeric) {
-    return {
-      major: parseInt(numeric[1], 10),
-      minor: numeric[2] ? parseInt(numeric[2], 10) : 0,
-      raw: version,
-    };
-  }
-
-  const yearMatch = version.match(/20(\d{2})/);
-  if (yearMatch) {
-    const year = parseInt(`20${yearMatch[1]}`, 10);
-    return {
-      major: year - 1990,
-      minor: 0,
-      year,
-      raw: version,
-    };
-  }
+  const numeric = version.trim().match(/^(\d{1,2})(?:\.(\d+))?(?:\.\d+)*$/);
+  if (numeric) return { major: Number(numeric[1]), minor: Number(numeric[2] || 0), raw: version };
+  // Marketing years are not runtime versions; report unknown until queried from Adobe.
 
   return { major: 0, minor: 0, raw: version };
 }
@@ -53,13 +37,13 @@ export function getPhotoshopCapabilities(version: string): PhotoshopCapabilities
   const detector = new PhotoshopDetector();
 
   const major = parsed.major;
-  const year = parsed.year ?? (major >= 13 ? 1990 + major : undefined);
 
-  const selectSubjectV2 = major >= 23 || (year !== undefined && year >= 2020);
-  const generativeFill = major >= 25 || (year !== undefined && year >= 2024);
+
+  const selectSubjectV2 = major >= 23;
+  const generativeFill = major >= 25;
   const generativeRemove = generativeFill;
   const generativeExpand = generativeFill;
-  const generativeUpscale = major >= 27 || (year !== undefined && year >= 2025);
+  const generativeUpscale = major >= 27;
   const skyReplacementNative = generativeFill;
   const executeAsModal = generativeFill;
 
@@ -75,7 +59,7 @@ export function getPhotoshopCapabilities(version: string): PhotoshopCapabilities
       neural_filters: false,
       uxp_bridge_reachable: false,
       execute_as_modal_timeout: executeAsModal,
-      uxp_plugin_api: detector.supportsUXP(version),
+      uxp_plugin_api: major > 0 && detector.supportsUXP(version),
     },
   };
 }

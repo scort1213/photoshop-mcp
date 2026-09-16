@@ -1,3 +1,4 @@
+import { access } from './operation-safety.js';
 import { platform } from 'os';
 import { Logger } from '../utils/logger.js';
 import { PhotoshopDetector } from './detector.js';
@@ -52,8 +53,11 @@ export class PhotoshopConnection {
         this.photoshopInfo = await this.detector.detect();
       }
 
-      // For now, just check if Photoshop is detected
-      return this.photoshopInfo !== null;
+      const executor = this.getExecutor();
+      this.applyMacOSAppName();
+      if (!await executor.isPhotoshopRunning()) return false;
+      const version = await access.run('read', () => executor.execute('app.version', 15000));
+      return /^\d{1,3}(?:\.\d+)*$/.test(String(version).trim());
     } catch (error) {
       this.logger.error('Ping failed:', error);
       return false;
@@ -69,7 +73,7 @@ export class PhotoshopConnection {
       // Windows discovery can return a marketing year from the installation
       // path. Query the host before applying numeric feature-version gates.
       if (platform() === 'win32' && /^20\d{2}$/.test(this.photoshopInfo.version)) {
-        const runtimeVersion = String(await this.executeScript('app.version')).trim();
+        const runtimeVersion = String(await access.run('read', () => this.executeScript('app.version'))).trim();
         if (!/^\d{1,3}(?:\.\d+)*$/.test(runtimeVersion)) {
           throw new Error(`Unexpected Photoshop runtime version: ${runtimeVersion}`);
         }

@@ -19,7 +19,7 @@ describe('withOptionalDocumentId', () => {
   it('injects document_id on mutating tools', () => {
     const next = withOptionalDocumentId(fakeTool('photoshop_delete_layer'));
     const schema = next.inputSchema as { properties: Record<string, { type: string }> };
-    expect(schema.properties.document_id.type).toBe('number');
+    expect(schema.properties.document_id.type).toBe('integer');
   });
 
   it('does not inject on excluded tools', () => {
@@ -42,13 +42,12 @@ describe('withOptionalDocumentId', () => {
 });
 
 describe('parseDocumentIdArg', () => {
-  it('truncates finite numbers', () => {
-    expect(parseDocumentIdArg({ document_id: 12.9 })).toBe(12);
-  });
+  it.each([12.9, -1, 0, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, null, '1'])('rejects invalid document id %s', (document_id) => { expect(() => parseDocumentIdArg({ document_id })).toThrow('invalid_argument'); });
+  it('accepts a positive integer', () => { expect(parseDocumentIdArg({ document_id: 12 })).toBe(12); });
 
   it('rejects non-numbers', () => {
     expect(parseDocumentIdArg({})).toBeUndefined();
-    expect(parseDocumentIdArg({ document_id: '1' })).toBeUndefined();
+    expect(() => parseDocumentIdArg({ document_id: '1' })).toThrow('invalid_argument');
   });
 });
 

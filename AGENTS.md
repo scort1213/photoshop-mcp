@@ -40,7 +40,7 @@ Follow the server `instructions` advertised on MCP `initialize` ([src/prompts/in
 1. DISCOVER: tools/list + prompts/list (or get_capabilities once per session)
 2. STATE:    photoshop_get_state before mutating; photoshop_get_preview after major steps
 3. ACT:      prefer photoshop_recipe_* for multi-step outcomes (single undo step)
-4. RECOVER:  on error, read structured envelope (code, suggested_next_tool) → get_state → retry one step
+4. RECOVER:  on error, read the envelope → get_state → inspect partial changes; never automatically retry an outcome_unknown operation
 ```
 
 ### Tool selection
@@ -85,7 +85,7 @@ Examples: [examples/cursor-config.json](examples/cursor-config.json), [examples/
 | Symptom | Fix |
 | ------- | --- |
 | Photoshop not found | Start Photoshop; set `PHOTOSHOP_PATH` if non-standard install |
-| Tool times out | Large operations may need retries; check `get_state` for partial progress |
+| Tool times out | Distinguish `queue_timeout` from `outcome_unknown`; inspect state, then explicitly recover after completion. Do not automatically retry writes. See `BOUNDARY_HARDENING.md`. |
 | `generative_unavailable` / `version_unsupported` | Call `get_capabilities`; feature may need newer Photoshop or Adobe login |
 | Neural filter fails | **Add Plugin** → `uxp-plugin/manifest.json` → **Load** in UXP Developer Tools — see [docs/development.md](docs/development.md#uxp-bridge-plugin-neural-filters) |
 | No active document | Ask user to open/create a document, then `get_state` |

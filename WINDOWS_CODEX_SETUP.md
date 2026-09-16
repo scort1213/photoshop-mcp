@@ -3,10 +3,16 @@
 This fork's `codex/windows-setup` branch was verified on Photoshop 2022
 (23.0.0), Node 24.19.0, and this project's MCP server version 1.7.14.
 
+The newer `codex/boundary-hardening` branch adds strict target validation,
+cross-process serialization, timeout quarantine and explicit recovery. It exposes
+119 tools. See [the hardening contract](BOUNDARY_HARDENING.md) and
+[the acceptance runner](scripts/boundary/README.md) for its separate release gates.
+The historical smoke results below do not certify every tool or the stress gates.
+
 Install and build the MCP server from this checkout:
 
 ```powershell
-pnpm install --ignore-scripts --no-optional
+pnpm install --frozen-lockfile --ignore-scripts --no-optional
 node scripts/clean-dist.mjs
 node node_modules/typescript/bin/tsc
 codex mcp add photoshop --env ANALYTICS_DISABLED=1 --env LOG_LEVEL=2 --env 'PHOTOSHOP_PATH=C:\absolute\path\Photoshop.exe' -- C:\absolute\path\node.exe C:\absolute\path\photoshop-mcp\dist\index.js

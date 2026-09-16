@@ -1,3 +1,4 @@
+import { atomicSave } from '../utils/atomic-save.js';
 import { ToolDefinition, ToolResult } from '../core/tool-registry.js';
 import { PhotoshopConnection } from '../platform/connection.js';
 import { PhotoshopAPIFactory } from '../api/photoshop-api.js';
@@ -28,11 +29,13 @@ export function createDocumentTools(connection: PhotoshopConnection): ToolDefini
               type: 'number',
               description: 'Document width in pixels',
               minimum: 1,
+              maximum: 300000,
             },
             height: {
               type: 'number',
               description: 'Document height in pixels',
               minimum: 1,
+              maximum: 300000,
             },
             resolution: {
               type: 'number',
@@ -131,6 +134,7 @@ export function createDocumentTools(connection: PhotoshopConnection): ToolDefini
               enum: ['PSD', 'JPEG', 'PNG'],
               default: 'PSD',
             },
+            overwrite: { type: 'boolean', default: false, description: 'Explicitly allow replacing an existing output file.' },
             quality: {
               type: 'number',
               description: 'Quality for JPEG (1-12, default: 8)',
@@ -367,18 +371,12 @@ async function saveDocument(
     const apiFactory = new PhotoshopAPIFactory(connection);
     const api = await apiFactory.createAPI();
 
-    let script;
-    switch (format.toUpperCase()) {
-      case 'JPEG':
-        script = ExtendScriptSnippets.saveAsJPEG(path, quality);
-        break;
-      case 'PNG':
-        script = ExtendScriptSnippets.saveAsPNG(path);
-        break;
-      default:
-        script = ExtendScriptSnippets.saveAsPSD(path);
-    }
-    await api.executeScript(script);
+    await atomicSave(path, format.toUpperCase(), args.overwrite === true, async (temporaryPath) => {
+      const script = format === 'JPEG' ? ExtendScriptSnippets.saveAsJPEG(temporaryPath, quality)
+        : format === 'PNG' ? ExtendScriptSnippets.saveAsPNG(temporaryPath)
+        : ExtendScriptSnippets.saveAsPSD(temporaryPath);
+      return api.executeScript(script);
+    });
 
     return {
       content: [

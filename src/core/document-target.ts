@@ -6,6 +6,7 @@ const targetDocumentId = new AsyncLocalStorage<number | undefined>();
 
 /** Tools that already manage documents themselves, or never target a document. */
 export const DOCUMENT_ID_SCHEMA_EXCLUDES = new Set([
+  'photoshop_recover_connection',
   'photoshop_ping',
   'photoshop_get_version',
   'photoshop_get_capabilities',
@@ -14,7 +15,8 @@ export const DOCUMENT_ID_SCHEMA_EXCLUDES = new Set([
 ]);
 
 export const DOCUMENT_ID_PROPERTY = {
-  type: 'number',
+  type: 'integer',
+  minimum: 1,
   description:
     'Optional Photoshop document id from photoshop_get_state / photoshop_list_documents. ' +
     'When set, the tool activates that document before running so a UI tab switch cannot retarget the edit.',
@@ -30,8 +32,9 @@ export function getTargetDocumentId(): number | undefined {
 
 export function parseDocumentIdArg(args: Record<string, unknown> | undefined): number | undefined {
   const raw = args?.document_id;
-  if (typeof raw !== 'number' || !Number.isFinite(raw)) return undefined;
-  return Math.trunc(raw);
+  if (!args || !Object.prototype.hasOwnProperty.call(args, 'document_id')) return undefined;
+  if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw <= 0) throw new Error('invalid_argument: document_id must be a positive safe integer');
+  return raw;
 }
 
 export function wrapDocumentIdHandler(handler: ToolHandler): ToolHandler {

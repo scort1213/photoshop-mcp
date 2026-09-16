@@ -1,3 +1,5 @@
+import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
+import { access, acquireLease, clearQuarantine, documentManaged } from '../platform/operation-safety.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -39,7 +41,8 @@ import { createColorAdjustmentTools } from '../tools/color-adjustment-tools.js';
 import { createDataTools } from '../tools/data-tools.js';
 import { createStackTools } from '../tools/stack-tools.js';
 import { createExportTools } from '../tools/export-tools.js';
-import { ensureUxpBridgeServer } from '../platform/uxp-bridge-server.js';
+
+const READ_TOOLS = new Set(['photoshop_ping', 'photoshop_get_version', 'photoshop_get_capabilities', 'photoshop_list_documents', 'photoshop_get_document_info', 'photoshop_get_state', 'photoshop_get_layers', 'photoshop_get_history', 'photoshop_recover_connection']);
 
 export interface PhotoshopMCPServerOptions {
   serverVersion: string;
@@ -79,9 +82,10 @@ export class PhotoshopMCPServer {
 
   private registerToolDefinition(definition: ToolDefinition): void {
     const tool = withOptionalDocumentId(definition.tool);
+    const validate = new AjvJsonSchemaValidator().getValidator(tool.inputSchema);
     this.toolRegistry.register(tool.name, {
       tool,
-      handler: wrapToolHandler(tool.name, wrapDocumentIdHandler(definition.handler)),
+      handler: wrapToolHandler(tool.name, wrapDocumentIdHandler((args) => { const checked = validate(args); if (!checked.valid) throw new Error('invalid_arguments: ' + checked.errorMessage); return access.run(READ_TOOLS.has(tool.name) ? 'read' : 'write', () => documentManaged.run(['photoshop_open_image', 'photoshop_create_document', 'photoshop_set_active_document'].includes(tool.name), () => definition.handler(args))); })),
     });
   }
 
@@ -90,6 +94,17 @@ export class PhotoshopMCPServer {
   }
 
   private registerTools() {
+    this.registerToolDefinition({
+      tool: { name: 'photoshop_recover_connection', description: 'After an outcome_unknown error, inspect document state and acknowledge partial changes. Does not undo or retry operations. Refuses recovery while any call is still running.', inputSchema: { type: 'object', properties: { acknowledge: { type: 'boolean' } }, required: ['acknowledge'] } },
+      handler: async (args) => {
+        if (args.acknowledge !== true) throw new Error('invalid_argument: acknowledge must be true after inspecting state');
+        const state = await this.toolRegistry.execute('photoshop_get_state', {});
+        if (state.isError) return state;
+        const lease = await acquireLease(Date.now() + 1000);
+        try { await clearQuarantine(); } finally { await lease.release(); }
+        return { content: [{ type: 'text', text: 'Recovery acknowledged. No operation was retried.' }, ...state.content] };
+      },
+    });
     this.registerToolDefinition({
       tool: {
         name: 'photoshop_ping',
@@ -120,9 +135,7 @@ export class PhotoshopMCPServer {
 
     const connection = this.session.getConnection();
 
-    void ensureUxpBridgeServer().catch((err) => {
-      this.logger.debug('UXP bridge server not started:', err);
-    });
+    // Start the optional UXP bridge lazily, only when capability checks need it.
 
     this.registerToolDefinitions(createDocumentTools(connection));
     this.registerToolDefinitions(createLayerTools(connection));
@@ -212,6 +225,7 @@ export class PhotoshopMCPServer {
             : 'Failed to connect to Photoshop',
         },
       ],
+      isError: !isConnected,
     };
   }
 

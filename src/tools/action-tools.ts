@@ -41,9 +41,12 @@ export function createActionTools(connection: PhotoshopConnection): ToolDefiniti
         inputSchema: {
           type: 'object',
           properties: {
+            timeout_ms: { type: 'integer', minimum: 1, maximum: 120000, default: 30000, description: 'Deadline including queue wait. Timeout does not undo Adobe work.' },
             code: {
               type: 'string',
               description: 'ExtendScript code to execute',
+              minLength: 1,
+              maxLength: 1000000,
             },
           },
           required: ['code'],
@@ -100,7 +103,7 @@ async function executeCustomScript(
     const api = await apiFactory.createAPI();
 
     const script = ExtendScriptSnippets.executeCustomScript(code);
-    const result = await api.executeScript(script);
+    const result = await api.executeScript(script, args.timeout_ms as number | undefined);
 
     return {
       content: [

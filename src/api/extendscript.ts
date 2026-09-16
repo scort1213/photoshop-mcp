@@ -128,6 +128,8 @@ function getContextInfo() {
       context.document = {};
       try { context.document.id = doc.id; } catch (e) {}
       try { context.document.name = doc.name; } catch (e) {}
+      try { context.document.path = doc.fullName.fsName; } catch (e) { context.document.path = null; }
+      try { context.document.saved = doc.saved; } catch (e) {}
       try { context.document.width = doc.width.as('px'); } catch (e) {}
       try { context.document.height = doc.height.as('px'); } catch (e) {}
       try { context.document.resolution = doc.resolution; } catch (e) {}
@@ -144,6 +146,8 @@ function getContextInfo() {
         if (doc.activeLayer) {
           var layer = doc.activeLayer;
           context.activeLayer = {
+            id: layer.id,
+            id: layer.id,
             name: layer.name,
             kind: String(layer.kind),
             opacity: layer.opacity,
@@ -236,15 +240,17 @@ function __mcp_c2t(s) { return cTID(s); }
  */
 export const MCP_SMART_OBJECT_HELPERS = `
 function __mcp_findLayer(container, name) {
-  for (var i = 0; i < container.layers.length; i++) {
-    var l = container.layers[i];
-    if (l.name === name) return l;
+  var matches = [];
+  function visit(parent) {
+    for (var i = 0; i < parent.layers.length; i++) {
+      var layer = parent.layers[i];
+      if (layer.name === name) matches.push(layer);
+      if (layer.typename === 'LayerSet') visit(layer);
+    }
   }
-  for (var j = 0; j < container.layerSets.length; j++) {
-    var nested = __mcp_findLayer(container.layerSets[j], name);
-    if (nested) return nested;
-  }
-  return null;
+  visit(container);
+  if (matches.length > 1) throw new Error('ambiguous_name: multiple layers named ' + name);
+  return matches.length ? matches[0] : null;
 }
 
 function __mcp_activateLayerByName(layerName) {
@@ -493,6 +499,8 @@ export const ExtendScriptSnippets = {
         is_active: false
       };
       try { entry.width = d.width.as('px'); } catch (eW) {}
+      try { entry.path = d.fullName.fsName; } catch (ePath) { entry.path = null; }
+      try { entry.saved = d.saved; } catch (eSaved) {}
       try { entry.height = d.height.as('px'); } catch (eH) {}
       try { entry.resolution = d.resolution; } catch (eR) {}
       try { entry.is_active = activeId !== null && d.id === activeId; } catch (eA) {}
@@ -605,16 +613,26 @@ export const ExtendScriptSnippets = {
       throw new Error('No active document');
     }
     var doc = app.activeDocument;
-    var textLayer = doc.artLayers.add();
+    var __psFont = null;
+    ${fontName ? `
+    __psFont = resolveFontPostScriptName("${jsString(fontName)}");
+    if (!__psFont) throw new Error('font_not_found: ${jsString(fontName)}');
+    ` : ''}
+    // In artboard documents, a root-level layer cannot always become text.
+    // Keep the new text in the active layer's group/artboard instead.
+    var container = doc.activeLayer.typename === 'LayerSet' ? doc.activeLayer : doc.activeLayer.parent;
+    var parentCheck = container;
+    while (parentCheck && parentCheck.typename === 'LayerSet') {
+      if (parentCheck.allLocked) throw new Error('locked_layer: target group is locked');
+      parentCheck = parentCheck.parent;
+    }
+    var textLayer = container.artLayers.add();
+    doc.activeLayer = textLayer;
     textLayer.kind = LayerKind.TEXT;
     textLayer.textItem.contents = "${jsString(text)}";
     textLayer.textItem.position = [${x}, ${y}];
     textLayer.textItem.size = ${fontSize};
     ${fontName ? `
-    var __psFont = resolveFontPostScriptName("${jsString(fontName)}");
-    if (!__psFont) {
-      throw new Error('font_not_found: ${jsString(fontName)}');
-    }
     textLayer.textItem.font = __psFont;
     ` : ''}
     
@@ -715,7 +733,7 @@ export const ExtendScriptSnippets = {
       throw new Error('No active document');
     }
     var doc = app.activeDocument;
-    var saveFile = new File("${path.replace(/\\/g, '\\\\')}");
+    var saveFile = new File(${jsStringLiteral(path)});
     var psdOptions = new PhotoshopSaveOptions();
     psdOptions.embedColorProfile = true;
     doc.saveAs(saveFile, psdOptions, true);
@@ -730,7 +748,7 @@ export const ExtendScriptSnippets = {
       throw new Error('No active document');
     }
     var doc = app.activeDocument;
-    var saveFile = new File("${path.replace(/\\/g, '\\\\')}");
+    var saveFile = new File(${jsStringLiteral(path)});
     var jpegOptions = new JPEGSaveOptions();
     jpegOptions.quality = ${quality};
     jpegOptions.embedColorProfile = true;
@@ -746,7 +764,7 @@ export const ExtendScriptSnippets = {
       throw new Error('No active document');
     }
     var doc = app.activeDocument;
-    var saveFile = new File("${path.replace(/\\/g, '\\\\')}");
+    var saveFile = new File(${jsStringLiteral(path)});
     var pngOptions = new PNGSaveOptions();
     pngOptions.compression = 9;
     doc.saveAs(saveFile, pngOptions, true);
@@ -886,6 +904,7 @@ export const ExtendScriptSnippets = {
         var layer = container.layers[i];
         try {
           layers.push({
+            id: layer.id,
             name: layer.name,
             kind: String(layer.kind),
             visible: layer.visible,
@@ -917,6 +936,7 @@ export const ExtendScriptSnippets = {
    */
   selectLayerByName: (name: string) => `
     ${getContextInfo}
+    ${MCP_SMART_OBJECT_HELPERS}
     
     if (app.documents.length === 0) {
       throw new Error('No active document');
@@ -924,18 +944,7 @@ export const ExtendScriptSnippets = {
     var doc = app.activeDocument;
     var targetName = "${jsString(name)}";
     var target = null;
-    function findLayer(container, name) {
-      for (var i = 0; i < container.layers.length; i++) {
-        var l = container.layers[i];
-        if (l.name === name) return l;
-      }
-      for (var j = 0; j < container.layerSets.length; j++) {
-        var nested = findLayer(container.layerSets[j], name);
-        if (nested) return nested;
-      }
-      return null;
-    }
-    target = findLayer(doc, targetName);
+    target = __mcp_findLayer(doc, targetName);
     if (!target) {
       throw new Error('Layer not found: ' + targetName);
     }
@@ -2657,6 +2666,7 @@ export const ExtendScriptSnippets = {
    */
   moveLayerToPosition: (targetLayerName: string, position: string) => `
     ${getContextInfo}
+    ${MCP_SMART_OBJECT_HELPERS}
     
     if (app.documents.length === 0) {
       throw new Error('No active document');
@@ -2664,17 +2674,10 @@ export const ExtendScriptSnippets = {
     var doc = app.activeDocument;
     var activeLayer = doc.activeLayer;
     
-    // Find target layer
-    var targetLayer = null;
-    for (var i = 0; i < doc.layers.length; i++) {
-      if (doc.layers[i].name === "${jsString(targetLayerName)}") {
-        targetLayer = doc.layers[i];
-        break;
-      }
-    }
-    
+    var targetLayer = __mcp_findLayer(doc, "${jsString(targetLayerName)}");
+
     if (!targetLayer) {
-      throw new Error('Target layer not found: ${targetLayerName}');
+      throw new Error('Target layer not found: ${jsString(targetLayerName)}');
     }
     
     // Determine ElementPlacement

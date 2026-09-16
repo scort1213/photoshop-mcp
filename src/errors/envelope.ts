@@ -22,6 +22,9 @@ export type PhotoshopErrorCode =
   | 'unsupported_color_mode'
   | 'no_base_layer_below'
   | 'not_clipping'
+  | 'outcome_unknown'
+  | 'queue_timeout'
+  | 'ambiguous_document'
   | 'unknown';
 
 export interface PhotoshopErrorEnvelope {
@@ -37,6 +40,11 @@ const ERROR_PATTERNS: Array<{
   code: PhotoshopErrorCode;
   suggested_next_tool?: string;
 }> = [
+  { pattern: /ambiguous_name/i, code: 'ambiguous_name', suggested_next_tool: 'photoshop_get_layers' },
+  { pattern: /outcome_unknown/i, code: 'outcome_unknown', suggested_next_tool: 'photoshop_get_state' },
+  { pattern: /queue_timeout/i, code: 'queue_timeout' },
+  { pattern: /ambiguous_document/i, code: 'ambiguous_document', suggested_next_tool: 'photoshop_list_documents' },
+  { pattern: /invalid_argument/i, code: 'invalid_arguments' },
   { pattern: /document_not_found/i, code: 'document_not_found', suggested_next_tool: 'photoshop_list_documents' },
   { pattern: /no active document/i, code: 'no_active_document', suggested_next_tool: 'photoshop_get_state' },
   { pattern: /no documents/i, code: 'no_active_document', suggested_next_tool: 'photoshop_get_state' },

@@ -50,6 +50,14 @@ Units & conventions
   path only when the user explicitly asks for one.
 
 Error recovery contract
+- On \`queue_timeout\`, the queued command was not dispatched. On
+  \`outcome_unknown\`, an executing operation may still finish. Never retry it
+  automatically. Read state, inspect partial changes, wait for the active call
+  to finish, then use \`photoshop_recover_connection\` with acknowledge:true.
+  Recovery neither undoes nor repeats an operation. If the application remains
+  unresponsive, stop editing and resolve it before clearing the quarantine.
+- Multiple open documents require an explicit valid \`document_id\` for edits.
+  Arbitrary JSX and recorded actions are trusted code, not sandboxed operations.
 - Tools return a structured envelope when something is wrong:
   \`{ ok: false, code, message, suggested_next_tool?, suggested_args?, context? }\`
   along with MCP's \`isError: true\`. When you see this, follow the

@@ -138,18 +138,7 @@ async function runBatchMockupReplace(
     var doc = app.activeDocument;
     var targetName = "${jsString(layerName)}";
     var target = null;
-    function findLayer(container, name) {
-      for (var i = 0; i < container.layers.length; i++) {
-        var l = container.layers[i];
-        if (l.name === name) return l;
-      }
-      for (var j = 0; j < container.layerSets.length; j++) {
-        var nested = findLayer(container.layerSets[j], name);
-        if (nested) return nested;
-      }
-      return null;
-    }
-    target = findLayer(doc, targetName);
+    target = __mcp_findLayer(doc, targetName);
     if (!target) {
       return { ok: false, code: 'layer_not_found', message: 'Smart Object layer not found: ' + targetName, suggested_next_tool: 'photoshop_get_layers' };
     }

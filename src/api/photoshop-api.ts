@@ -1,3 +1,4 @@
+import { access, documentManaged } from '../platform/operation-safety.js';
 import { Logger } from '../utils/logger.js';
 import { PhotoshopConnection } from '../platform/connection.js';
 import { documentGuardScript, getTargetDocumentId } from '../core/document-target.js';
@@ -105,7 +106,7 @@ class ExtendScriptPhotoshopAPI implements PhotoshopAPI {
     // preferences are restored in the finally block.
     const targetId = getTargetDocumentId();
     const documentGuard =
-      typeof targetId === 'number' ? documentGuardScript(targetId) : '';
+      typeof targetId === 'number' ? documentGuardScript(targetId) : (access.getStore() === 'read' || documentManaged.getStore()) ? '' : `if (app.documents.length > 1) throw new Error('ambiguous_document: supply document_id when multiple documents are open');`;
     return `
 (function() {
   var __originalRulerUnits = null;
@@ -124,7 +125,7 @@ class ExtendScriptPhotoshopAPI implements PhotoshopAPI {
   }
   if (typeof confirm !== 'undefined') {
     __origConfirm = confirm;
-    confirm = function() { $.writeln('[MCP] confirm suppressed'); return true; };
+    confirm = function() { throw new Error('confirmation_required: interactive confirmation is not automatically accepted'); };
   }
   if (typeof prompt !== 'undefined') {
     __origPrompt = prompt;

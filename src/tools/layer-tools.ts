@@ -67,6 +67,7 @@ export function createLayerTools(connection: PhotoshopConnection): ToolDefinitio
             fontSize: {
               type: 'number',
               description: 'Font size in points (default: 24)',
+              exclusiveMinimum: 0,
               default: 24,
             },
             fontName: {
@@ -221,9 +222,9 @@ async function createTextLayer(
   args: Record<string, unknown>
 ): Promise<ToolResult> {
   const text = args.text as string;
-  const x = (args.x as number) || 100;
-  const y = (args.y as number) || 100;
-  const fontSize = (args.fontSize as number) || 24;
+  const x = (args.x as number | undefined) ?? 100;
+  const y = (args.y as number | undefined) ?? 100;
+  const fontSize = (args.fontSize as number | undefined) ?? 24;
   const fontName = args.fontName as string | undefined;
 
   try {
