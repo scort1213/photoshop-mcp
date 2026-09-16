@@ -6,6 +6,7 @@ import { resolvePhotoshopCapabilities } from '../platform/capabilities.js';
 import { PhotoshopConnection } from '../platform/connection.js';
 import { envelopeToToolResult, classifyError } from '../errors/envelope.js';
 import { parseExtendScriptPayload } from '../utils/extendscript-result.js';
+import { jpegDimensions } from '../utils/jpeg-dimensions.js';
 
 const PREVIEW_MAX_BYTES = 4 * 1024 * 1024;
 
@@ -43,14 +44,14 @@ export function createStateTools(connection: PhotoshopConnection): ToolDefinitio
           type: 'object',
           properties: {
             max_dimension_px: {
-              type: 'number',
+              type: 'integer',
               description: 'Maximum long edge in pixels (default 1024)',
               minimum: 1,
               maximum: 8192,
               default: 1024,
             },
             quality: {
-              type: 'number',
+              type: 'integer',
               description: 'JPEG quality 1–12 (default 8)',
               minimum: 1,
               maximum: 12,
@@ -111,6 +112,11 @@ async function getPreview(
 
     tempPath = result.path;
     const buffer = await readFile(tempPath);
+    const dimensions = jpegDimensions(buffer);
+    if (dimensions.width !== result.width || dimensions.height !== result.height ||
+        Math.max(dimensions.width, dimensions.height) > maxDimension) {
+      throw new Error('preview_size_mismatch: JPEG dimensions do not match the requested preview');
+    }
 
     if (buffer.byteLength > PREVIEW_MAX_BYTES) {
       return envelopeToToolResult(

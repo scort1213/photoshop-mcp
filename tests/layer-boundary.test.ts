@@ -40,7 +40,7 @@ it('creates text inside the active group and resolves missing fonts before addin
       },
     },
   };
-  const app = { documents: [doc], activeDocument: doc, fonts: [] };
+  const app = { documents: [doc], activeDocument: doc, fonts: [], preferences: { smartQuotes: true } };
   const context = { app, LayerKind: { TEXT: 'text' } };
   const run = (script: string) => runInNewContext('(function(){' + script + '})()', context);
   expect(() => run(ExtendScriptSnippets.createTextLayer('test', 0, 0, 24, 'missing-font'))).toThrow(
@@ -52,4 +52,26 @@ it('creates text inside the active group and resolves missing fonts before addin
   expect(groupAdds).toBe(1);
   expect(rootAdds).toBe(0);
   expect(result.position).toEqual({ x: 0, y: 0 });
+  expect(app.preferences.smartQuotes).toBe(true);
+});
+it.each([true, false])('preserves exact text and restores smart-quotes preference %s', initial => {
+  const preferences = { smartQuotes: initial };
+  let value = '';
+  const textItem = {
+    get contents() { return value; },
+    set contents(text: string) { value = preferences.smartQuotes ? text.replace(/"/g, '〝') : text; },
+  };
+  const layer = { kind: 'text', textItem };
+  const app = { preferences, documents: [{}], activeDocument: { activeLayer: layer } };
+  const text = '中文 🧪 "引号"\r\n第二行';
+  const result = runInNewContext('(function(){' + ExtendScriptSnippets.updateTextContent(text) + '})()', { app, LayerKind: { TEXT: 'text' } });
+  expect(result.text).toBe(text);
+  expect(preferences.smartQuotes).toBe(initial);
+});
+it('restores the preference even if Photoshop rejects the text assignment', () => {
+  const preferences = { smartQuotes: true };
+  const textItem = { set contents(_text: string) { throw new Error('read-only text'); } };
+  const app = { preferences, documents: [{}], activeDocument: { activeLayer: { kind: 'text', textItem } } };
+  expect(() => runInNewContext('(function(){' + ExtendScriptSnippets.updateTextContent('test') + '})()', { app, LayerKind: { TEXT: 'text' } })).toThrow('read-only text');
+  expect(preferences.smartQuotes).toBe(true);
 });

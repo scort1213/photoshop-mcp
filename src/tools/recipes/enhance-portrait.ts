@@ -104,9 +104,15 @@ async function runEnhancePortrait(
             text: JSON.stringify(
               {
                 ok: false,
-                code: 'uxp_bridge_unavailable',
+                code: neural.error?.includes('outcome_unknown')
+                  ? 'outcome_unknown'
+                  : neural.error?.includes('queue_timeout')
+                    ? 'queue_timeout'
+                    : 'uxp_bridge_unavailable',
                 message: neural.error ?? 'Neural skin smoothing failed',
-                suggested_next_tool: 'photoshop_get_capabilities',
+                suggested_next_tool: neural.error?.includes('outcome_unknown')
+                  ? 'photoshop_get_state'
+                  : 'photoshop_get_capabilities',
               },
               null,
               2

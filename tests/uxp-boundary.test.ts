@@ -24,10 +24,15 @@ it('does not confuse a listening HTTP server with a connected plugin', async () 
   const state = await (await fetch(`http://127.0.0.1:${port}/health`)).json();
   expect(state.pluginConnected).toBe(false);
 });
+it('refuses legacy plugins that cannot enforce document targeting', async () => {
+  expect((await fetch(`http://127.0.0.1:${port}/poll`)).status).toBe(426);
+  const state = await (await fetch(`http://127.0.0.1:${port}/health`)).json();
+  expect(state.pluginConnected).toBe(false);
+});
 it('removes timed-out undelivered commands before a plugin reconnects', async () => {
   const result = await bridge.invokeUxpBridge('must-not-run', {}, 50);
   expect(result.error).toBe('uxp_queue_timeout');
-  expect((await fetch(`http://127.0.0.1:${port}/poll`)).status).toBe(204);
+  expect((await fetch(`http://127.0.0.1:${port}/poll?protocol=2`)).status).toBe(204);
   const state = await (await fetch(`http://127.0.0.1:${port}/health`)).json();
   expect(state.pending).toBe(0);
 });
@@ -42,7 +47,7 @@ it('retains exclusivity after a delivered timeout until the actual plugin reply'
   const operation = bridge.invokeUxpBridge('slow', {}, 120);
   let command: { id: string } | undefined;
   for (let i = 0; i < 20 && !command; i++) {
-    const response = await fetch(`http://127.0.0.1:${port}/poll`);
+    const response = await fetch(`http://127.0.0.1:${port}/poll?protocol=2`);
     if (response.status === 200) command = await response.json();
     else await new Promise((r) => setTimeout(r, 5));
   }
@@ -64,7 +69,7 @@ it('retains exclusivity after a delivered timeout until the actual plugin reply'
   await safety.clearQuarantine();
 });
 it('expires plugin heartbeat instead of reporting a stale connection', async () => {
-  await fetch(`http://127.0.0.1:${port}/poll`);
+  await fetch(`http://127.0.0.1:${port}/poll?protocol=2`);
   const now = Date.now();
   const spy = vi.spyOn(Date, 'now').mockReturnValue(now + 16000);
   try {
@@ -73,5 +78,57 @@ it('expires plugin heartbeat instead of reporting a stale connection', async () 
     );
   } finally {
     spy.mockRestore();
+  }
+});
+it('rejects a result past its deadline even when the timeout callback has not run', async () => {
+  const safety = await import('../src/platform/operation-safety.js');
+  const operation = bridge.invokeUxpBridge('event-loop-delay', {}, 10000);
+  let command: { id: string; deadline: number } | undefined;
+  for (let i = 0; i < 40 && !command; i++) {
+    const response = await fetch(`http://127.0.0.1:${port}/poll?protocol=2`);
+    if (response.status === 200) command = await response.json();
+    else await new Promise(r => setTimeout(r, 5));
+  }
+  expect(command).toBeDefined();
+  const spy = vi.spyOn(Date, 'now').mockReturnValue(command!.deadline + 1);
+  try {
+    await fetch(`http://127.0.0.1:${port}/result`, {
+      method: 'POST', body: JSON.stringify({ id: command!.id, ok: true }),
+    });
+    expect((await operation).error).toContain('outcome_unknown');
+    await expect(safety.assertSafe()).rejects.toThrow('outcome_unknown');
+  } finally {
+    spy.mockRestore();
+    await safety.clearQuarantine();
+  }
+});
+it('persists quarantine for a failed delivered command, and clears it only for success or explicit recovery', async () => {
+  const safety = await import('../src/platform/operation-safety.js');
+  for (const ok of [false, true]) {
+    const operation = bridge.invokeUxpBridge('test', {}, 1000);
+    let command: { id: string; deadline: number } | undefined;
+    for (let i = 0; i < 40 && !command; i++) {
+      const response = await fetch(`http://127.0.0.1:${port}/poll?protocol=2`);
+      if (response.status === 200) command = await response.json();
+      else await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(command).toBeDefined();
+    expect(command!.deadline).toBeGreaterThan(Date.now());
+    await expect(safety.assertSafe()).rejects.toThrow('outcome_unknown');
+    await fetch(`http://127.0.0.1:${port}/result`, {
+      method: 'POST',
+      body: JSON.stringify({
+        id: command!.id,
+        ok,
+        error: ok ? undefined : 'partial filter failure',
+      }),
+    });
+    const result = await operation;
+    if (ok) await expect(safety.assertSafe()).resolves.toBeUndefined();
+    else {
+      expect(result.error).toContain('outcome_unknown');
+      await expect(safety.assertSafe()).rejects.toThrow('outcome_unknown');
+      await safety.clearQuarantine();
+    }
   }
 });

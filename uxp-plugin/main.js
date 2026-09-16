@@ -81,11 +81,57 @@ async function handleCommand(cmd) {
 
   try {
     if (cmdAction === 'neural_filter') {
+      const checkDeadline = () => {
+        if (!Number.isFinite(cmd.deadline) || Date.now() >= cmd.deadline) {
+          throw new Error('queue_timeout: command expired before dispatch');
+        }
+      };
+      checkDeadline();
       const descriptors = neuralDescriptors(params.filter, params);
-      const result = await action.batchPlay(descriptors, {
-        synchronousExecution: true,
-        modalBehavior: 'execute',
-      });
+      if (typeof photoshop.core?.executeAsModal !== 'function') {
+        throw new Error('version_unsupported: executeAsModal is required');
+      }
+      const result = await photoshop.core.executeAsModal(
+        async () => {
+          checkDeadline();
+          const documents = Array.from(photoshop.app.documents);
+          const requested = params.document_id;
+          let target;
+          if (requested !== undefined) {
+            if (!Number.isSafeInteger(requested) || requested <= 0) {
+              throw new Error('invalid_argument: document_id must be a positive safe integer');
+            }
+            target = documents.find((document) => document.id === requested);
+            if (!target) throw new Error('document_not_found: target was closed');
+          } else {
+            if (documents.length === 0) throw new Error('no_active_document');
+            if (documents.length !== 1) throw new Error('ambiguous_document: supply document_id');
+            target = documents[0];
+          }
+          if (photoshop.app.activeDocument?.id !== target.id) {
+            checkBatchResult(
+              await action.batchPlay(
+                [
+                  {
+                    _obj: 'select',
+                    _target: [{ _ref: 'document', _id: target.id }],
+                    _options: { dialogOptions: 'dontDisplay' },
+                  },
+                ],
+                { synchronousExecution: true }
+              )
+            );
+          }
+          if (photoshop.app.activeDocument?.id !== target.id) {
+            throw new Error('document_not_found: target activation could not be verified');
+          }
+          checkDeadline();
+          const data = await action.batchPlay(descriptors, { synchronousExecution: true });
+          checkBatchResult(data);
+          return { document_id: target.id, result: data };
+        },
+        { commandName: 'MCP neural filter' }
+      );
       await postResult({ id, ok: true, data: result });
       return;
     }
@@ -100,9 +146,19 @@ async function handleCommand(cmd) {
   }
 }
 
+function checkBatchResult(result) {
+  if (!Array.isArray(result) || result.length === 0) {
+    throw new Error('invalid_result: missing batchPlay result');
+  }
+  const failure = result.find(
+    (item) => item?._obj === 'error' || (typeof item?.result === 'number' && item.result < 0)
+  );
+  if (failure) throw new Error(failure.message || `Photoshop error ${failure.result}`);
+}
+
 async function pollOnce() {
   try {
-    const res = await fetch(`${BRIDGE_BASE}/poll`);
+    const res = await fetch(`${BRIDGE_BASE}/poll?protocol=2`);
     if (res.status === 204) return;
     if (!res.ok) return;
     const cmd = await res.json();

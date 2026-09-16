@@ -2,6 +2,7 @@
  * Client for the MCP-hosted UXP bridge (health check + neural filter invoke).
  */
 import { ensureUxpBridgeServer, invokeUxpBridge } from './uxp-bridge-server.js';
+import { getTargetDocumentId } from '../core/document-target.js';
 
 const HEALTH_TIMEOUT_MS = 800;
 
@@ -35,7 +36,16 @@ export async function invokeNeuralFilter(
   filter: NeuralFilterKind,
   params: NeuralFilterParams = {}
 ): Promise<{ ok: boolean; data?: unknown; error?: string }> {
-  const result = await invokeUxpBridge('neural_filter', { filter, ...params }, 90_000);
+  const documentId = getTargetDocumentId();
+  const result = await invokeUxpBridge(
+    'neural_filter',
+    {
+      filter,
+      ...params,
+      ...(documentId !== undefined ? { document_id: documentId } : {}),
+    },
+    90_000
+  );
   if (!result.ok) {
     return { ok: false, error: result.error ?? 'neural_filter_failed' };
   }

@@ -1,4 +1,5 @@
-import { access, documentManaged } from '../platform/operation-safety.js';
+import { access, documentManaged, managedMutation } from '../platform/operation-safety.js';
+import { artboardMutationGuard } from '../core/artboard-guard.js';
 import { Logger } from '../utils/logger.js';
 import { PhotoshopConnection } from '../platform/connection.js';
 import { documentGuardScript, getTargetDocumentId } from '../core/document-target.js';
@@ -111,12 +112,14 @@ class ExtendScriptPhotoshopAPI implements PhotoshopAPI {
 (function() {
   var __originalRulerUnits = null;
   var __originalTypeUnits = null;
+  var __originalSmartQuotes = null;
   var __origDialogs = null;
   var __origAlert = null;
   var __origConfirm = null;
   var __origPrompt = null;
   try { __originalRulerUnits = app.preferences.rulerUnits; } catch (e) {}
   try { __originalTypeUnits = app.preferences.typeUnits; } catch (e) {}
+  try { __originalSmartQuotes = app.preferences.smartQuotes; } catch (e) {}
   try { __origDialogs = app.displayDialogs; } catch (e) {}
   try { app.displayDialogs = DialogModes.NO; } catch (e) {}
   if (typeof alert !== 'undefined') {
@@ -138,8 +141,12 @@ class ExtendScriptPhotoshopAPI implements PhotoshopAPI {
   try {
     try { app.preferences.rulerUnits = Units.PIXELS; } catch (e) {}
     try { app.preferences.typeUnits = TypeUnits.POINTS; } catch (e) {}
+    // Style/position setters can recompose text and substitute quotes too.
+    // Keep literal characters throughout the entire call, not only assignment.
+    try { app.preferences.smartQuotes = false; } catch (e) {}
 
     ${documentGuard}
+    ${managedMutation.getStore() ? artboardMutationGuard : ''}
 
     var result = (function() {
       ${script}
@@ -153,6 +160,7 @@ class ExtendScriptPhotoshopAPI implements PhotoshopAPI {
   } finally {
     try { if (__originalRulerUnits !== null) app.preferences.rulerUnits = __originalRulerUnits; } catch (e) {}
     try { if (__originalTypeUnits !== null) app.preferences.typeUnits = __originalTypeUnits; } catch (e) {}
+    try { if (__originalSmartQuotes !== null) app.preferences.smartQuotes = __originalSmartQuotes; } catch (e) {}
     try { if (__origDialogs !== null) app.displayDialogs = __origDialogs; } catch (e) {}
     if (__origAlert !== null) { alert = __origAlert; }
     if (__origConfirm !== null) { confirm = __origConfirm; }

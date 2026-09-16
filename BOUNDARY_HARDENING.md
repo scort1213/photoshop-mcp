@@ -16,6 +16,13 @@ Branch: `codex/boundary-hardening`, based on the Windows installation baseline.
   Document creation/open/switch tools manage their own target. Name-based layer
   lookup rejects duplicates. State now includes paths, saved flags and layer IDs.
 - Custom JSX accepts `timeout_ms` (1–120000). Scripts remain trusted code.
+- Managed edits reject artboard documents before mutation. In a real PS 23.0
+  file, adding an empty layer changed the document canvas width from 3394 to
+  1346 even though every original layer and artboard rectangle remained intact.
+  Read, preview, save, close and document-management tools remain available.
+  Arbitrary JSX is still trusted execution and is not a safe workaround for
+  this restriction. Recipes which open new documents internally are not
+  certified for artboard content; use verified non-artboard copies only.
 - `photoshop_save_document` stages PSD/PNG/JPEG outputs before publication,
   checks extension compatibility, and requires `overwrite:true` to replace an
   existing file. If a write times out, staging is retained for inspection while
@@ -23,11 +30,33 @@ Branch: `codex/boundary-hardening`, based on the Windows installation baseline.
   this file-publication guarantee.
 - Legacy ExtendScript values are parsed as data, never evaluated as Node code.
   Unicode transport uses unique temporary directories and Unicode result files.
+- Text calls preserve literal quotes and verify the characters after assignment.
+  Smart-quote substitution is disabled for the entire ExtendScript call because
+  position/font setters can also recompose text, then the original preference is
+  restored alongside units/dialog settings in `finally`.
+- Preview export strips XMP metadata only from its disposable duplicate,
+  flattens before sizing, converts that duplicate to RGB/8-bit and validates the
+  JPEG's encoded dimensions. Large document ancestry metadata previously made a
+  tiny preview exceed 30 MB. Source metadata and document state are preserved.
 - UXP availability requires a recent poll. Expired undelivered commands are
   removed; delivered timeouts retain their application lease until a real reply.
   A fixed-port collision is reported instead of silently incrementing ports.
   If a plugin never replies, stop its operation/restart the test application,
   restart its MCP server, then inspect state before acknowledging recovery.
+  The server now requires plugin protocol 2; old plugins receive HTTP 426 and
+  cannot consume commands. Reload the updated plugin when upgrading the bridge.
+  Commands carry their deadline and scoped document id. The plugin checks the
+  deadline before and after acquiring modal access, selects/verifies the exact
+  target inside that modal scope, and rejects ambiguous or stale targets.
+  Returned batchPlay error descriptors are failures, not successful results.
+  Failed delivered operations remain quarantined for state inspection.
+  A reply received after its deadline cannot become success even when the
+  event loop has not yet run the timeout callback.
+
+These UXP guards have regression tests with mocked Photoshop APIs and real local
+HTTP transport. They are not certification of an installed Adobe UXP plugin.
+API references: [modal execution](https://developer.adobe.com/photoshop/uxp/2022/ps-reference/media/executeasmodal)
+and [batchPlay result handling](https://developer.adobe.com/photoshop/uxp/2022/ps-reference/media/batchplay).
 
 If an interrupted filesystem write leaves a malformed lease or a stale
 `reclaim.lock`, automatic recovery fails closed. Stop all MCP clients, wait for

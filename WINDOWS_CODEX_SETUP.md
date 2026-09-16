@@ -23,6 +23,12 @@ UXP plugin are not built or installed by these steps. Restart Codex after
 adding the server. Do not point Codex at an upstream npm package when using
 the fixes in this fork.
 
+Keep Node and the checkout in persistent installation directories, not inside
+Codex's internal runtime cache. Cleaning that cache must not remove the executable
+referenced by the MCP configuration. After moving an installation, verify both
+the executable and `dist/index.js`, rebuild with the frozen lockfile, and test
+the exact configured stdio command before reloading Codex.
+
 Local fixes:
 
 - Transfer COM results through a UTF-16 file instead of the console code page,

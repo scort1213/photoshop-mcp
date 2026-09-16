@@ -5,10 +5,7 @@
 import type { ToolDefinition, ToolResult } from '../core/tool-registry.js';
 import { resolvePhotoshopCapabilities } from '../platform/capabilities.js';
 import type { PhotoshopConnection } from '../platform/connection.js';
-import {
-  invokeNeuralFilter,
-  type NeuralFilterKind,
-} from '../platform/uxp-bridge-client.js';
+import { invokeNeuralFilter, type NeuralFilterKind } from '../platform/uxp-bridge-client.js';
 import { atomicFailure, atomicSuccess } from './atomic-shared.js';
 
 const FILTER_KINDS: NeuralFilterKind[] = [
@@ -110,9 +107,15 @@ async function runNeuralFilter(
   if (!result.ok) {
     return atomicFailure({
       ok: false,
-      code: 'uxp_bridge_unavailable',
+      code: result.error?.includes('outcome_unknown')
+        ? 'outcome_unknown'
+        : result.error?.includes('queue_timeout')
+          ? 'queue_timeout'
+          : 'uxp_bridge_unavailable',
       message: result.error ?? 'Neural filter invocation failed',
-      suggested_next_tool: 'photoshop_get_capabilities',
+      suggested_next_tool: result.error?.includes('outcome_unknown')
+        ? 'photoshop_get_state'
+        : 'photoshop_get_capabilities',
     });
   }
 

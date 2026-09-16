@@ -43,8 +43,9 @@ The 60-minute timer starts over after an interruption.
 
 `python scripts/boundary/content_cases.py` adds bounded Photoshop mask-pixel,
 duplicate-layer, lock, smart-object, text and 16-bit color-mode assertions after
-the smoke run. This runner has not completed real-application acceptance yet;
-its current first observed result is the business-document guard refusing edits.
+the smoke run. It records partial passes and failures separately, and compares
+rendered text bounds for x=0 because PS 23.0 can reject the text-position getter
+for multiline/emoji content. Retain each round's result separately.
 
 For real fixtures, pass only copies prepared by this helper:
 
@@ -57,6 +58,9 @@ python scripts/boundary/real_fixtures.py ai
 `fixtures.json` records original hashes. Real-fixture tests edit/save/reopen the
 copies and compare structure and original hashes. Do not rerun a fixture test
 against already modified fixture copies; prepare a fresh run instead.
+Artboard documents exercise explicit rejection of editing, followed by an
+unchanged save/reopen check. Their `edit_boundary` is recorded as unsupported,
+not as a successful edit. Non-artboard PSD/PSB files exercise editable text.
 
 ## Evidence and limits
 

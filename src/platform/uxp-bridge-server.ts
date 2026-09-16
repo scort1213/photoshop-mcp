@@ -1,11 +1,12 @@
 import { createServer, type Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { acquireLease, assertSafe, quarantine } from './operation-safety.js';
+import { acquireLease, assertSafe, quarantine, clearQuarantine } from './operation-safety.js';
 
 export interface UxpBridgeCommand {
   id: string;
   action: string;
   params: Record<string, unknown>;
+  deadline: number;
 }
 export interface UxpBridgeResult {
   id: string;
@@ -59,6 +60,11 @@ export async function ensureUxpBridgeServer(): Promise<number> {
         return;
       }
       if (req.method === 'GET' && url.pathname === '/poll') {
+        // Old plugins ignore document ids and can report batchPlay errors as success.
+        if (url.searchParams.get('protocol') !== '2') {
+          json(426, { error: 'plugin_upgrade_required', requiredProtocol: 2 });
+          return;
+        }
         lastPluginPollAt = Date.now();
         const next = [...pending.values()].find(
           (p) => !p.delivered && !p.expired && p.deadline > Date.now()
@@ -100,10 +106,24 @@ export async function ensureUxpBridgeServer(): Promise<number> {
           clearTimeout(task.timer);
           pending.delete(result.id);
           void (async () => {
+            if (!task.expired && Date.now() >= task.deadline) {
+              await uncertain(task, 'uxp_result_after_deadline');
+            }
             // A late reply must not race timeout quarantine or convert failure into success.
             await task.quarantineWork;
+            if (!task.expired && result.ok) await clearQuarantine();
             await task.release();
-            if (!task.expired) task.resolve(result);
+            if (!task.expired)
+              task.resolve(
+                result.ok
+                  ? result
+                  : {
+                      ...result,
+                      error:
+                        'outcome_unknown: ' +
+                        (result.error || 'UXP command failed; inspect partial changes'),
+                    }
+              );
             json(200, { ok: true });
           })().catch(() => {
             task.resolve({
@@ -146,13 +166,18 @@ export async function invokeUxpBridge(
   try {
     await assertSafe();
     if (Date.now() >= deadline) throw new Error('queue_timeout: operation was not dispatched');
+    await quarantine('UXP write pending; inspect state if interrupted');
+    if (Date.now() >= deadline) {
+      await clearQuarantine();
+      throw new Error('queue_timeout: operation was not dispatched');
+    }
   } catch (error) {
     await lease.release();
     throw error;
   }
   return new Promise<UxpBridgeResult>((resolve) => {
     const task: Pending = {
-      command: { id, action, params },
+      command: { id, action, params, deadline },
       deadline,
       delivered: false,
       expired: false,
@@ -166,10 +191,12 @@ export async function invokeUxpBridge(
             });
           } else {
             pending.delete(id);
-            void lease.release().then(
-              () => resolve({ id, ok: false, error: 'uxp_queue_timeout' }),
-              () => resolve({ id, ok: false, error: 'bridge_cleanup_failed' })
-            );
+            void clearQuarantine()
+              .then(() => lease.release())
+              .then(
+                () => resolve({ id, ok: false, error: 'uxp_queue_timeout' }),
+                () => resolve({ id, ok: false, error: 'bridge_cleanup_failed' })
+              );
           }
         },
         Math.max(1, deadline - Date.now())
@@ -189,6 +216,7 @@ export async function shutdownUxpBridgeServer(): Promise<void> {
       await uncertain(task, 'bridge_shutdown');
     } else {
       pending.delete(id);
+      await clearQuarantine();
       await task.release();
       task.resolve({ id, ok: false, error: 'bridge_shutdown' });
     }

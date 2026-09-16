@@ -5,6 +5,23 @@
 
 import { jsString, jsStringLiteral } from '../utils/js-string.js';
 
+/** Avoid preference-driven substitutions while retaining the user's preference. */
+function literalTextAssignment(item: string, text: string): string {
+  return `
+    var __mcp_text = ${jsStringLiteral(text)};
+    var __mcp_smartQuotes = app.preferences.smartQuotes;
+    try {
+      app.preferences.smartQuotes = false;
+      ${item}.contents = __mcp_text;
+      if (${item}.contents !== __mcp_text) {
+        throw new Error('text_roundtrip_mismatch: Photoshop changed the supplied characters');
+      }
+    } finally {
+      app.preferences.smartQuotes = __mcp_smartQuotes;
+    }
+  `;
+}
+
 /**
  * Helper functions for character/string ID conversion
  */
@@ -629,7 +646,7 @@ export const ExtendScriptSnippets = {
     var textLayer = container.artLayers.add();
     doc.activeLayer = textLayer;
     textLayer.kind = LayerKind.TEXT;
-    textLayer.textItem.contents = "${jsString(text)}";
+    ${literalTextAssignment('textLayer.textItem', text)}
     textLayer.textItem.position = [${x}, ${y}];
     textLayer.textItem.size = ${fontSize};
     ${fontName ? `
@@ -1852,7 +1869,7 @@ export const ExtendScriptSnippets = {
       throw new Error('Active layer is not a text layer');
     }
     
-    layer.textItem.contents = "${jsString(newText)}";
+    ${literalTextAssignment('layer.textItem', newText)}
     
     return { 
       text: layer.textItem.contents
@@ -2863,39 +2880,52 @@ export const ExtendScriptSnippets = {
     }
 
     var doc = app.activeDocument;
-    var w = doc.width.as('px');
-    var h = doc.height.as('px');
     var maxDim = ${maxDimension};
-    var scale = 1;
-    if (w > maxDim || h > maxDim) {
-      scale = maxDim / Math.max(w, h);
+    var dup = null;
+    var tmpFile = null;
+    var complete = false;
+    try {
+      dup = doc.duplicate('__mcp_preview__', true);
+      // Large PSDs can carry tens of MB of XMP document ancestry into a tiny JPEG.
+      // Strip metadata on the disposable copy only; keep the source untouched.
+      dup.xmpMetadata.rawData = '';
+      // Flatten before measuring/resizing: artboard flattening can expand the canvas.
+      dup.flatten();
+      if (dup.mode !== DocumentMode.RGB) dup.changeMode(ChangeMode.RGB);
+      dup.bitsPerChannel = BitsPerChannelType.EIGHT;
+      var w = dup.width.as('px');
+      var h = dup.height.as('px');
+      var scale = Math.min(1, maxDim / Math.max(w, h));
+      if (scale < 1) {
+        dup.resizeImage(
+          UnitValue(Math.max(1, Math.round(w * scale)), 'px'),
+          UnitValue(Math.max(1, Math.round(h * scale)), 'px'),
+          dup.resolution,
+          ResampleMethod.BICUBIC
+        );
+      }
+      w = dup.width.as('px');
+      h = dup.height.as('px');
+      if (w > maxDim || h > maxDim) throw new Error('preview_size_mismatch');
+      tmpFile = new File(Folder.temp.fsName + '/ps-preview-' + (new Date().getTime()) + '-' + Math.floor(Math.random()*1000000000) + '.jpg');
+      var saveOptions = new JPEGSaveOptions();
+      saveOptions.quality = ${jpegQuality};
+      saveOptions.embedColorProfile = true;
+      saveOptions.formatOptions = FormatOptions.STANDARDBASELINE;
+      dup.saveAs(tmpFile, saveOptions, true);
+      dup.close(SaveOptions.DONOTSAVECHANGES);
+      dup = null;
+      app.activeDocument = doc;
+      complete = true;
+      return { path: tmpFile.fsName, width: w, height: h, mimeType: 'image/jpeg' };
+    } finally {
+      try {
+        if (dup) dup.close(SaveOptions.DONOTSAVECHANGES);
+      } finally {
+        app.activeDocument = doc;
+        if (!complete && tmpFile && tmpFile.exists) tmpFile.remove();
+      }
     }
-
-    var dup = doc.duplicate('__mcp_preview__', true);
-    if (scale < 1) {
-      dup.resizeImage(
-        UnitValue(Math.round(w * scale), 'px'),
-        UnitValue(Math.round(h * scale), 'px'),
-        doc.resolution,
-        ResampleMethod.BICUBIC
-      );
-    }
-
-    var tmpFile = new File(Folder.temp.fsName + '/ps-preview-' + (new Date().getTime()) + '.jpg');
-    var saveOptions = new JPEGSaveOptions();
-    saveOptions.quality = ${jpegQuality};
-    saveOptions.embedColorProfile = true;
-    saveOptions.formatOptions = FormatOptions.STANDARDBASELINE;
-    dup.flatten();
-    dup.saveAs(tmpFile, saveOptions, true);
-    dup.close(SaveOptions.DONOTSAVECHANGES);
-
-    return {
-      path: tmpFile.fsName,
-      width: Math.round(w * scale),
-      height: Math.round(h * scale),
-      mimeType: 'image/jpeg'
-    };
   `,
 
   /**

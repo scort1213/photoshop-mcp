@@ -2,7 +2,7 @@
 from boundary_suite import *
 
 def main():
-    c=Client('ps');created=None;passed=[]
+    c=Client('ps');created=None;passed=[];complete=False;failure=None
     try:
         assert_test_documents(c)
         state=c.state()['details'];anchor=state['active_document_id']
@@ -39,7 +39,12 @@ def main():
         text='中文 🧪 "引号"\r第二行'
         c.call('photoshop_create_text_layer',{'document_id':created,'text':text,'x':0,'y':0,'fontSize':24})
         assert c.script('return app.activeDocument.activeLayer.textItem.contents;',created)==text
-        assert c.script("return app.activeDocument.activeLayer.textItem.position[0].as('px');",created)==0
+        # PS 23.0 can reject textItem.position on this multiline/emoji layer.
+        # Compare rendered bounds of identical text at x=0 and x=100 instead.
+        zero_left=c.call('photoshop_get_state',{'document_id':created})['activeLayer']['bounds']['left']
+        c.call('photoshop_create_text_layer',{'document_id':created,'text':text,'x':100,'y':0,'fontSize':24})
+        shifted_left=c.call('photoshop_get_state',{'document_id':created})['activeLayer']['bounds']['left']
+        assert abs(shifted_left-zero_left-100)<.01,(zero_left,shifted_left)
         passed.append('missing-font-no-orphan-and-Unicode-zero-position')
         for mode in ['CMYK','RGB']:
             c.script("app.activeDocument.changeMode(ChangeMode."+mode+");app.activeDocument.bitsPerChannel=BitsPerChannelType.SIXTEEN;return String(app.activeDocument.bitsPerChannel);",created)
@@ -50,13 +55,18 @@ def main():
             assert c.script('return String(app.activeDocument.bitsPerChannel);',created)=='BitsPerChannelType.SIXTEEN'
             assert c.script('return String(app.activeDocument.mode);',created)=='DocumentMode.'+mode
         passed.append('CMYK-RGB-16bit-save-reopen')
-        (ROOT/'ps-content-cases.json').write_text(json.dumps({'passed':passed},ensure_ascii=False,indent=2),encoding='utf-8')
+        complete=True
         print('CONTENT PASS',passed,flush=True)
+    except Exception as error:
+        failure=str(error)
+        raise
     finally:
-        if created is not None:
-            # Never close a different document by falling back to the active tab.
-            recover(c)
-            c.call('photoshop_close_document',{'document_id':created,'save':False})
-        c.close()
+        (ROOT/'ps-content-cases.json').write_text(json.dumps({'passed':passed,'complete':complete,'failure':failure},ensure_ascii=False,indent=2),encoding='utf-8')
+        try:
+            if created is not None:
+                # Never close a different document by falling back to the active tab.
+                recover(c)
+                c.call('photoshop_close_document',{'document_id':created,'save':False})
+        finally:c.close()
 
 if __name__=='__main__':main()
