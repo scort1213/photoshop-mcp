@@ -275,8 +275,6 @@ export class PhotoshopMCPServer {
   }
 
   async start() {
-    await this.session.initialize();
-
     this.server.oninitialized = () => {
       onMcpClientConnected(this.server.getClientVersion());
     };
@@ -286,6 +284,12 @@ export class PhotoshopMCPServer {
 
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
+
+    // Adobe discovery/COM can block or fail while the application is unavailable.
+    // Expose the protocol first; tool calls retain their own connection checks.
+    void this.session.initialize().catch(error => {
+      this.logger.error('Adobe initialization failed; MCP remains available:', error);
+    });
 
     this.logger.info('MCP Server connected via stdio');
   }

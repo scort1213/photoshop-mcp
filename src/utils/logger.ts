@@ -25,9 +25,13 @@ export class Logger {
 
     // IMPORTANT: MCP uses stdout for protocol communication
     // All logs must go to stderr to avoid corrupting the JSON-RPC protocol
-    const formattedArgs = args.map(arg => 
-      typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-    ).join(' ');
+    const formattedArgs = args.map(arg => {
+      // Error's message/stack are not enumerable: JSON.stringify(Error) is {}.
+      if (arg instanceof Error) {
+        return JSON.stringify({ name: arg.name, message: arg.message, stack: arg.stack });
+      }
+      return typeof arg === 'object' ? JSON.stringify(arg) : String(arg);
+    }).join(' ');
     
     const logMessage = `${prefix} ${message} ${formattedArgs}`.trim();
     

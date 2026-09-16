@@ -91,3 +91,19 @@ LUT rendering is still outstanding. The 13 restored documents were preserved.
 Computer Use initialization, native Codex tool acceptance, real UXP and the
 uninterrupted 60-minute PS soak remain outstanding. Ten read reconnections do
 not substitute for the mixed-write soak. Private evidence: `20260916-restart`.
+# Native host acceptance in progress
+
+The current Codex thread directly exercised Illustrator's registered tools:
+three edit/preview/save/reopen rounds, invalid and ambiguous target refusals,
+closed-target refusals, and execution-timeout quarantine/recovery. Native host
+reload, disconnection and queued-expiry acceptance remain outstanding. Arbitrary
+trusted JSX is not a filesystem overwrite sandbox.
+
+Photoshop's MCP transport now starts before background Adobe initialization.
+Real subprocess tests prove initialize/tools-list remain available when Adobe
+initialization hangs or throws. Error logging now preserves message and stack.
+196 unit tests passed three times; three actual standalone handshakes listed 119
+tools in approximately 0.25 seconds each. This does not establish the sole cause
+of the historical host connection-closed error, nor replace current-thread
+native tool acceptance. Codex reload is pending; no unrelated host was stopped.
+The 60-minute PS soak is optional per the user's revised requirement.
