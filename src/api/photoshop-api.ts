@@ -1,4 +1,5 @@
 import { access, documentManaged, managedMutation } from '../platform/operation-safety.js';
+import { randomUUID } from 'node:crypto';
 import { artboardMutationGuard } from '../core/artboard-guard.js';
 import { Logger } from '../utils/logger.js';
 import { PhotoshopConnection } from '../platform/connection.js';
@@ -91,11 +92,18 @@ class ExtendScriptPhotoshopAPI implements PhotoshopAPI {
 
   async executeScript(script: string, timeoutMs?: number): Promise<unknown> {
     // Wrap script in error handling
-    const wrappedScript = this.wrapInErrorHandling(script);
-    return await this.connection.executeScript(wrappedScript, timeoutMs);
+    const preflightMarker = 'MCP_PREFLIGHT_' + randomUUID() + ': ';
+    const wrappedScript = this.wrapInErrorHandling(script, preflightMarker);
+    const result = await this.connection.executeScript(wrappedScript, timeoutMs);
+    // A normal bridge completion proves the body was never entered. Let the
+    // executor finish its lease before surfacing this definite rejection.
+    if (typeof result === 'string' && result.startsWith(preflightMarker)) {
+      throw new Error(result.slice(preflightMarker.length));
+    }
+    return result;
   }
 
-  private wrapInErrorHandling(script: string): string {
+  private wrapInErrorHandling(script: string, preflightMarker: string): string {
     // ExtendScript has no JSON object, so the result is serialized via
     // toSource()/String(). Errors are surfaced with an "ERROR:" prefix
     // that platform executors translate back into thrown Errors.
@@ -117,6 +125,7 @@ class ExtendScriptPhotoshopAPI implements PhotoshopAPI {
   var __origAlert = null;
   var __origConfirm = null;
   var __origPrompt = null;
+  var __mcpBodyEntered = false;
   try { __originalRulerUnits = app.preferences.rulerUnits; } catch (e) {}
   try { __originalTypeUnits = app.preferences.typeUnits; } catch (e) {}
   try { __originalSmartQuotes = app.preferences.smartQuotes; } catch (e) {}
@@ -148,6 +157,7 @@ class ExtendScriptPhotoshopAPI implements PhotoshopAPI {
     ${documentGuard}
     ${managedMutation.getStore() ? artboardMutationGuard : ''}
 
+    __mcpBodyEntered = true;
     var result = (function() {
       ${script}
     })();
@@ -156,6 +166,7 @@ class ExtendScriptPhotoshopAPI implements PhotoshopAPI {
     }
     return String(result);
   } catch (error) {
+    if (!__mcpBodyEntered) return ${JSON.stringify(preflightMarker)} + (error.message || String(error));
     return 'ERROR: ' + (error.message || String(error));
   } finally {
     try { if (__originalRulerUnits !== null) app.preferences.rulerUnits = __originalRulerUnits; } catch (e) {}

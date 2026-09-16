@@ -118,3 +118,9 @@ fault/lifecycle guard remains strict and does not inherit this exception.
 Manual editing and clients bypassing the application mutex cannot be serialized
 by this harness. Metadata equality is not proof of pixel immutability. Coexistence
 results must be labeled separately from exclusive fault-injection acceptance.
+
+`preflight_cases.py <test-document-id>` verifies that omitted/stale targets
+reject before the script body without poisoning the shared write state, while
+a body that modifies the test layer and then fails remains quarantined. It
+requires multiple already-open documents and an existing test target inside the
+run directory. It never recovers a pre-existing unknown state at startup.
