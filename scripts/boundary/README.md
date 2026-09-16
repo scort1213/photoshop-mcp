@@ -151,3 +151,12 @@ three edit/save/close/reopen rounds with geometry, original structure, editable
 text and property assertions. Outputs go to a unique acceptance directory.
 Read-only inspection should avoid enumerating all pixel bounds of giant smart
 objects: such a scan can itself exceed the default COM deadline.
+
+`read_tools_cases.py <owned-test-document-id>` checks six read/target tools
+against actual document state and installed font metadata for three rounds.
+`raster_cases.py` creates small RGB test documents, checks twenty operations
+through pixels, layer/selection geometry and saved/reopened PSD structure,
+then closes only the documents it created. Both can coexist with business
+documents under the operator's explicit coexistence authorization. Do not run
+new fault-prone acceptance cases alongside a stability soak: intentional or
+unexpected script errors correctly block all writers via shared quarantine.
