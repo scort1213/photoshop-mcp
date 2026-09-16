@@ -13,7 +13,7 @@ export function createHistoryTools(connection: PhotoshopConnection): ToolDefinit
           type: 'object',
           properties: {
             steps: {
-              type: 'number',
+              type: 'integer',
               description: 'Number of steps to undo (default: 1)',
               minimum: 1,
               default: 1,
@@ -31,7 +31,7 @@ export function createHistoryTools(connection: PhotoshopConnection): ToolDefinit
           type: 'object',
           properties: {
             steps: {
-              type: 'number',
+              type: 'integer',
               description: 'Number of steps to redo (default: 1)',
               minimum: 1,
               default: 1,

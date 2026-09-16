@@ -178,6 +178,17 @@ function __mcp_json_stringify(value) {
 }
 `;
 
+const VERIFY_RECIPE_RESULT = `
+    if (__mcp_recipe_result && __mcp_recipe_result.details &&
+        __mcp_recipe_result.details.failed && __mcp_recipe_result.details.failed.length) {
+      __mcp_recipe_result.ok = false;
+      __mcp_recipe_result.code = 'partial_completion';
+      __mcp_recipe_result.message = 'Batch partially completed; inspect output_paths and failed entries before continuing';
+    }
+    if (!__mcp_recipe_result || __mcp_recipe_result.ok !== true)
+      throw new Error('partial_completion: ' + __mcp_json_stringify(__mcp_recipe_result));
+`;
+
 export function wrapInSuspendHistory(historyName: string, body: string): string {
   const escapedName = historyName.replace(/"/g, '\\"');
   return `
@@ -198,6 +209,7 @@ export function wrapInSuspendHistory(historyName: string, body: string): string 
     if (!__mcp_recipe_result) {
       __mcp_recipe_result = { ok: false, code: 'recipe_no_result', message: 'Recipe produced no result' };
     }
+    ${VERIFY_RECIPE_RESULT}
     return __mcp_json_stringify(__mcp_recipe_result);
   `;
 }
@@ -223,6 +235,7 @@ export function wrapInStandaloneScript(body: string): string {
     if (!__mcp_recipe_result) {
       __mcp_recipe_result = { ok: false, code: 'recipe_no_result', message: 'Recipe produced no result' };
     }
+    ${VERIFY_RECIPE_RESULT}
     return __mcp_json_stringify(__mcp_recipe_result);
   `;
 }

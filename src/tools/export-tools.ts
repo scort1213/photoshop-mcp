@@ -1,5 +1,6 @@
 import { ToolDefinition, ToolResult } from '../core/tool-registry.js';
 import { PhotoshopConnection } from '../platform/connection.js';
+import { atomicSave } from '../utils/atomic-save.js';
 import { ExtendScriptSnippets } from '../api/extendscript.js';
 import {
   atomicFailureFromError,
@@ -55,24 +56,17 @@ async function exportAs(
       : 80;
 
   try {
-    const raw = await runSnippet(
-      connection,
-      ExtendScriptSnippets.exportAs(filePath, format, quality)
-    );
-    const parsed = parseSnippetResult(raw);
-    if (!parsed) {
-      return atomicFailureFromError(new Error(`Unparseable export result: ${String(raw)}`));
-    }
-    if (parsed.ok === false) {
-      return atomicFailureFromError(new Error(String(parsed.message || 'Export failed')), {
-        code: 'version_unsupported',
-        suggested_next_tool: 'photoshop_save_document',
-      });
-    }
+    let parsed: Record<string, unknown> | null = null;
+    await atomicSave(filePath, format, false, async temporary => {
+      const raw = await runSnippet(connection, ExtendScriptSnippets.exportAs(temporary, format, quality));
+      parsed = parseSnippetResult(raw);
+      if (!parsed) throw new Error(`Unparseable export result: ${String(raw)}`);
+      if (parsed.ok === false) throw new Error(String(parsed.message || 'Export failed'));
+    });
     return atomicSuccess(`Exported ${format} to ${filePath}`, {
       path: filePath,
       format,
-      method: parsed.method,
+      method: (parsed as Record<string, unknown> | null)?.method,
     });
   } catch (error) {
     return atomicFailureFromError(error);

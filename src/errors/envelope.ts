@@ -26,6 +26,11 @@ export type PhotoshopErrorCode =
   | 'queue_timeout'
   | 'application_busy'
   | 'ambiguous_document'
+  | 'backup_failed'
+  | 'partial_completion'
+  | 'artboard_geometry_changed'
+  | 'unsupported_artboard_mutation'
+  | 'artboard_settings_failed'
   | 'unknown';
 
 export interface PhotoshopErrorEnvelope {
@@ -41,6 +46,11 @@ const ERROR_PATTERNS: Array<{
   code: PhotoshopErrorCode;
   suggested_next_tool?: string;
 }> = [
+  { pattern: /partial_completion/i, code: 'partial_completion', suggested_next_tool: 'photoshop_get_state' },
+  { pattern: /backup_failed/i, code: 'backup_failed', suggested_next_tool: 'photoshop_get_state' },
+  { pattern: /artboard_geometry_changed/i, code: 'artboard_geometry_changed', suggested_next_tool: 'photoshop_get_state' },
+  { pattern: /unsupported_artboard_mutation/i, code: 'unsupported_artboard_mutation', suggested_next_tool: 'photoshop_get_state' },
+  { pattern: /artboard_settings_failed/i, code: 'artboard_settings_failed', suggested_next_tool: 'photoshop_get_state' },
   { pattern: /ambiguous_name/i, code: 'ambiguous_name', suggested_next_tool: 'photoshop_get_layers' },
   { pattern: /outcome_unknown/i, code: 'outcome_unknown', suggested_next_tool: 'photoshop_get_state' },
   { pattern: /queue_timeout/i, code: 'queue_timeout' },

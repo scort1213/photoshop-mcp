@@ -4,6 +4,7 @@
  */
 
 import { jsString, jsStringLiteral } from '../utils/js-string.js';
+import { artboardMutationGuard } from '../core/artboard-guard.js';
 
 /** Avoid preference-driven substitutions while retaining the user's preference. */
 function literalTextAssignment(item: string, text: string): string {
@@ -344,7 +345,7 @@ function __mcp_makeLayerMaskAtChannel(maskMode) {
 
 function __mcp_selectLayerMaskChannel() {
   var selRef = new ActionReference();
-  selRef.putEnumerated(cTID('Chnl'), cTID('Ordn'), cTID('Trgt'));
+  selRef.putEnumerated(cTID('Chnl'), cTID('Chnl'), cTID('Msk '));
   var selDesc = new ActionDescriptor();
   selDesc.putReference(cTID('null'), selRef);
   selDesc.putBoolean(cTID('MkVs'), true);
@@ -796,7 +797,18 @@ export const ExtendScriptSnippets = {
       throw new Error('No active document');
     }
     var doc = app.activeDocument;
-    doc.close(${save ? 'SaveOptions.SAVECHANGES' : 'SaveOptions.DONOTSAVECHANGES'});
+    ${save ? `
+    var __mcpArtboardAllowed = true;
+    ${artboardMutationGuard}
+    if (__mcpArtboardScope) {
+      try {
+        __mcpArtboardScope.begin();
+        doc.save();
+      } finally { __mcpArtboardScope.restore(); }
+      __mcpArtboardScope.verify();
+      doc.close(SaveOptions.DONOTSAVECHANGES);
+    } else { doc.close(SaveOptions.SAVECHANGES); }
+    ` : 'doc.close(SaveOptions.DONOTSAVECHANGES);'}
     return { closed: true };
   `,
 
@@ -2068,10 +2080,13 @@ export const ExtendScriptSnippets = {
 
     var channelName = ${channelNameLiteral};
     var name = channelName || ('MCP Selection ' + (new Date().getTime()));
-    var chan = doc.channels.add();
-    chan.name = name;
-    chan.kind = ChannelType.SELECTEDAREA;
-    doc.selection.store(chan, SelectionType.REPLACE);
+    var previousChannels = doc.activeChannels, chan;
+    try {
+      chan = doc.channels.add();
+      chan.name = name;
+      chan.kind = ChannelType.SELECTEDAREA;
+      doc.selection.store(chan, SelectionType.REPLACE);
+    } finally { doc.activeChannels = previousChannels; }
 
     return {
       ok: true,
@@ -2255,7 +2270,8 @@ export const ExtendScriptSnippets = {
     direction: GradientMaskDirection = 'bottom_to_top',
     startPct = 0,
     endPct = 100,
-    angleDeg?: number
+    angleDeg?: number,
+    autoCreate = false
   ) => {
     const gradientEndpoints: Record<
       GradientMaskDirection,
@@ -2283,13 +2299,17 @@ export const ExtendScriptSnippets = {
       throw new Error('No active layer');
     }
 
+    var maskAutoCreated = false, previousChannels = null;
+    // ExtendScript cannot expose the active layer-mask channel through activeChannels.
+    try { previousChannels = doc.activeChannels; } catch (eMaskChannel) {}
     if (!__mcp_hasLayerMaskAM()) {
-      throw new Error('Active layer has no layer mask');
+      ${autoCreate ? "__mcp_makeLayerMaskAtChannel('revealAll'); maskAutoCreated = true;" : "throw new Error('Active layer has no layer mask');"}
     }
 
     app.displayDialogs = DialogModes.NO;
     doc.activeLayer = layer;
-    __mcp_selectLayerMaskChannel();
+    try {
+      __mcp_selectLayerMaskChannel();
 
     var docW = doc.width.as('px');
     var docH = doc.height.as('px');
@@ -2298,15 +2318,14 @@ export const ExtendScriptSnippets = {
     var toXPx = docW * (${endpoints.toH} / 100.0);
     var toYPx = docH * (${endpoints.toV} / 100.0);
     __mcp_gradientFillLayerMask(fromXPx, fromYPx, toXPx, toYPx, ${endpoints.reverse});
-
-    try {
-      doc.activeChannels = doc.componentChannels;
-    } catch (eRestore) {
-      doc.activeLayer = layer;
+    } finally {
+      if (previousChannels) doc.activeChannels = previousChannels;
+      else __mcp_selectLayerMaskChannel();
     }
 
     return {
       applied: true,
+      mask_auto_created: maskAutoCreated,
       direction: '${direction}',
       angle: ${angle}
     };
@@ -2318,21 +2337,21 @@ export const ExtendScriptSnippets = {
    */
   deleteLayerMask: () => `
     ${helperFunctions}
+    ${MCP_LAYER_MASK_HELPERS}
 
     if (app.documents.length === 0) {
       throw new Error('No active document');
     }
 
-    var layer = app.activeDocument.activeLayer;
-    if (!layer.hasLayerMask) {
-      return { maskDeleted: false, message: 'Layer has no mask' };
-    }
+    if (!__mcp_hasLayerMaskAM()) throw new Error('layer_mask_not_found: active layer has no mask');
 
     var desc = new ActionDescriptor();
     var ref = new ActionReference();
     ref.putEnumerated(cTID('Chnl'), cTID('Chnl'), cTID('Msk '));
     desc.putReference(cTID('null'), ref);
+    desc.putBoolean(sTID('apply'), false);
     executeAction(cTID('Dlt '), desc, DialogModes.NO);
+    if (__mcp_hasLayerMaskAM()) throw new Error('mask_delete_failed: layer mask is still present');
 
     return {
       maskDeleted: true
@@ -2462,25 +2481,20 @@ export const ExtendScriptSnippets = {
    */
   applyLayerMask: () => `
     ${helperFunctions}
+    ${MCP_LAYER_MASK_HELPERS}
 
     if (app.documents.length === 0) {
       throw new Error('No active document');
     }
 
+    if (!__mcp_hasLayerMaskAM()) throw new Error('layer_mask_not_found: active layer has no mask');
     var desc = new ActionDescriptor();
     var ref = new ActionReference();
-    ref.putEnumerated(sTID('channel'), sTID('ordinal'), sTID('targetEnum'));
+    ref.putEnumerated(cTID('Chnl'), cTID('Chnl'), cTID('Msk '));
     desc.putReference(sTID('null'), ref);
     desc.putBoolean(sTID('apply'), true);
-    try {
-      executeAction(sTID('delete'), desc, DialogModes.NO);
-    } catch (eDeleteApply) {
-      var legacy = new ActionDescriptor();
-      var legacyRef = new ActionReference();
-      legacyRef.putEnumerated(cTID('Chnl'), cTID('Chnl'), cTID('Msk '));
-      legacy.putReference(cTID('null'), legacyRef);
-      executeAction(cTID('Aply'), legacy, DialogModes.NO);
-    }
+    executeAction(sTID('delete'), desc, DialogModes.NO);
+    if (__mcp_hasLayerMaskAM()) throw new Error('mask_apply_failed: layer mask is still present');
 
     return {
       maskApplied: true
@@ -2581,7 +2595,8 @@ export const ExtendScriptSnippets = {
     }
     
     // Calculate target index
-    var targetIndex = Math.max(0, currentIndex - ${steps});
+    if (${steps} > currentIndex) throw new Error('invalid_argument: requested undo steps exceed available history');
+    var targetIndex = currentIndex - ${steps};
     
     // Set active history state to go back
     if (targetIndex < doc.historyStates.length) {
@@ -2623,7 +2638,9 @@ export const ExtendScriptSnippets = {
     }
     
     // Calculate target index
-    var targetIndex = Math.min(doc.historyStates.length - 1, currentIndex + ${steps});
+    if (${steps} > doc.historyStates.length - 1 - currentIndex)
+      throw new Error('invalid_argument: requested redo steps exceed available history');
+    var targetIndex = currentIndex + ${steps};
     
     // Set active history state to go forward
     if (targetIndex >= 0) {
@@ -2767,7 +2784,8 @@ export const ExtendScriptSnippets = {
 
     if (doc.layers.length > 0) {
       var bottomLayer = doc.layers[doc.layers.length - 1];
-      layer.move(bottomLayer, ElementPlacement.PLACEBEFORE);
+      if (layer.id !== bottomLayer.id)
+        layer.move(bottomLayer, bottomLayer.isBackgroundLayer ? ElementPlacement.PLACEBEFORE : ElementPlacement.PLACEAFTER);
     }
     
     var result = {

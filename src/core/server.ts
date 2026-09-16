@@ -1,5 +1,5 @@
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
-import { access, acquireLease, clearQuarantine, documentManaged, managedMutation } from '../platform/operation-safety.js';
+import { access, acquireLease, clearQuarantine, documentManaged, managedMutation, operationContext } from '../platform/operation-safety.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -43,7 +43,7 @@ import { createStackTools } from '../tools/stack-tools.js';
 import { createExportTools } from '../tools/export-tools.js';
 
 const READ_TOOLS = new Set(['photoshop_ping', 'photoshop_get_version', 'photoshop_get_capabilities', 'photoshop_list_documents', 'photoshop_get_document_info', 'photoshop_get_state', 'photoshop_get_layers', 'photoshop_get_history', 'photoshop_list_fonts', 'photoshop_get_selection_bounds', 'photoshop_list_datasets', 'photoshop_recover_connection']);
-const ARTBOARD_NON_EDIT_TOOLS = new Set([...READ_TOOLS, 'photoshop_open_image', 'photoshop_create_document', 'photoshop_set_active_document', 'photoshop_close_document', 'photoshop_save_document', 'photoshop_get_preview', 'photoshop_execute_script']);
+const ARTBOARD_NON_EDIT_TOOLS = new Set([...READ_TOOLS, 'photoshop_open_image', 'photoshop_create_document', 'photoshop_set_active_document', 'photoshop_close_document', 'photoshop_get_preview', 'photoshop_execute_script']);
 
 export interface PhotoshopMCPServerOptions {
   serverVersion: string;
@@ -86,7 +86,18 @@ export class PhotoshopMCPServer {
     const validate = new AjvJsonSchemaValidator().getValidator(tool.inputSchema);
     this.toolRegistry.register(tool.name, {
       tool,
-      handler: wrapToolHandler(tool.name, wrapDocumentIdHandler((args) => { const checked = validate(args); if (!checked.valid) throw new Error('invalid_arguments: ' + checked.errorMessage); return access.run(READ_TOOLS.has(tool.name) ? 'read' : 'write', () => documentManaged.run(['photoshop_open_image', 'photoshop_create_document', 'photoshop_set_active_document'].includes(tool.name), () => managedMutation.run(ARTBOARD_NON_EDIT_TOOLS.has(tool.name) ? false : tool.name, () => definition.handler(args)))); })),
+      handler: wrapToolHandler(tool.name, wrapDocumentIdHandler((args) => {
+        const checked = validate(args);
+        if (!checked.valid) throw new Error('invalid_arguments: ' + checked.errorMessage);
+        const context: { args: Record<string, unknown>; recoveryBackup?: string } = { args };
+        return operationContext.run(context, () => access.run(READ_TOOLS.has(tool.name) ? 'read' : 'write', () =>
+          documentManaged.run(['photoshop_open_image', 'photoshop_create_document', 'photoshop_set_active_document'].includes(tool.name), () =>
+            managedMutation.run(ARTBOARD_NON_EDIT_TOOLS.has(tool.name) ? false : tool.name, async () => {
+              const result = await definition.handler(args);
+              if (context.recoveryBackup) result.content.push({ type: 'text', text: 'Verified recovery backup: ' + context.recoveryBackup });
+              return result;
+            }))));
+      })),
     });
   }
 

@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 
 export const documentManaged = new AsyncLocalStorage<boolean>();
 export const managedMutation = new AsyncLocalStorage<boolean | string>();
+export const operationContext = new AsyncLocalStorage<{ args: Record<string, unknown>; recoveryBackup?: string }>();
 export const access = new AsyncLocalStorage<'read' | 'write'>();
 export const safetyRoot = () =>
   process.env.PHOTOSHOP_SAFETY_DIR || join(tmpdir(), 'photoshop-mcp-safety');

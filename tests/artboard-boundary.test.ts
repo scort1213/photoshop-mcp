@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { runInNewContext } from 'node:vm';
 import { artboardMutationGuard } from '../src/core/artboard-guard.js';
 import { PhotoshopAPIFactory } from '../src/api/photoshop-api.js';
+import { ExtendScriptSnippets } from '../src/api/extendscript.js';
 import { managedMutation } from '../src/platform/operation-safety.js';
 import type { PhotoshopConnection } from '../src/platform/connection.js';
 
@@ -89,4 +90,52 @@ it('rejects uncertified artboard operations before changing settings', () => {
 
 it('does not mistake an empty application for an artboard document', () => {
   expect(() => runInNewContext(artboardMutationGuard, { app: { documents: [] } })).not.toThrow();
+});
+
+it('freezes artboard settings before recovery backup and restores them when backup fails', () => {
+  const f = fixture();
+  let edited = false;
+  const context = { ...f.context,
+    __mcpArtboardOperation: { tool: 'photoshop_flatten_image', args: {}, backup: 'existing.psb' },
+    File: class { exists = true; constructor() { expect(f.size()).toBe(false); } },
+    edit: () => { edited = true; },
+  };
+  expect(() => runInNewContext(artboardMutationGuard +
+    'try { __mcpArtboardScope.begin(); edit(); } finally { __mcpArtboardScope.restore(); }', context))
+    .toThrow('backup_failed');
+  expect(edited).toBe(false);
+  expect(f.writes).toEqual([false, true]);
+});
+
+it('rejects invalid artboard crop before settings or backup changes', () => {
+  const f = fixture();
+  expect(() => runInNewContext(artboardMutationGuard, { ...f.context,
+    __mcpArtboardOperation: { tool: 'photoshop_crop_document', args: { left: -1, top: 0, right: 10, bottom: 10 } },
+  })).toThrow('invalid_argument');
+  expect(f.writes).toEqual([]);
+});
+
+it('does not permit a half pixel geometry drift during ordinary edits', () => {
+  const f = fixture();
+  let coordinate = 100;
+  const original = f.context.executeActionGet;
+  f.context.executeActionGet = r => r.kind === 'document' ? original(r)
+    : { hasKey: () => true, getObjectValue: () => ({ getObjectValue: () => ({ getDouble: () => coordinate }) }) };
+  expect(() => runInNewContext(artboardMutationGuard +
+    '__mcpArtboardScope.begin(); drift(); __mcpArtboardScope.restore(); __mcpArtboardScope.verify();',
+    { ...f.context, drift: () => { coordinate += 0.25; } })).toThrow('artboard_geometry_changed');
+});
+
+it.each([false, true])('save-on-close restores settings before closing, save failure=%s', fails => {
+  const f = fixture();
+  let closed = false;
+  Object.assign(f.context.app.activeDocument, {
+    save: () => { expect(f.size()).toBe(false); if (fails) throw new Error('save failed'); },
+    close: () => { expect(f.size()).toBe(true); closed = true; },
+  });
+  const run = () => runInNewContext('(function(){' + ExtendScriptSnippets.closeDocument(true) + '})()',
+    { ...f.context, SaveOptions: { DONOTSAVECHANGES: 0, SAVECHANGES: 1 } });
+  if (fails) expect(run).toThrow('save failed'); else run();
+  expect(closed).toBe(!fails);
+  expect(f.writes).toEqual([false, true]);
 });

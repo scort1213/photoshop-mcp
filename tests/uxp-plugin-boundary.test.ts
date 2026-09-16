@@ -16,16 +16,17 @@ async function command(
     selectionFails?: boolean;
     deadline?: number;
     expireWhileWaiting?: boolean;
+    action?: string;
   } = {}
 ) {
   const docs = (options.ids || [11, 22]).map((id) => ({ id }));
-  const app = { documents: docs, activeDocument: docs[docs.length - 1] };
+  const app = { documents: docs, activeDocument: docs[docs.length - 1], version: '23.0.0' };
   const writes: Array<{ id: number; modal: boolean }> = [];
   const replies: Array<{ ok: boolean; error?: string }> = [];
   let modal = false;
   const cmd = {
     id: 'test',
-    action: 'neural_filter',
+    action: options.action || 'neural_filter',
     deadline: options.deadline ?? Date.now() + 60000,
     params: { filter: 'skin_smoothing', ...params },
   };
@@ -117,3 +118,34 @@ it.each([{ deadline: 0 }, { expireWhileWaiting: true }])(
     expect(result.replies[0].error).toContain('queue_timeout');
   }
 );
+
+it('diagnoses a multi-document host without selecting a document or running a filter', async () => {
+  const result = await command({}, { action: 'diagnostic' });
+  expect(result.writes).toEqual([]);
+  expect(result.replies[0]).toMatchObject({ ok: true, data: { hostVersion: '23.0.0', activeDocumentId: 22, modalAvailable: true } });
+});
+
+it('rejects a command returned to a hidden polling generation instead of executing it after show', async () => {
+  let panel: { show: () => void; hide: () => void };
+  const polls: Array<(value: unknown) => void> = [];
+  const replies: Array<Record<string, unknown>> = [];
+  let writes = 0;
+  const context = vm.createContext({
+    require: (name: string) => name === 'photoshop' ? { action: { batchPlay: () => { writes++; } } }
+      : { entrypoints: { setup: (entry: { panels: { bridgePanel: typeof panel } }) => { panel = entry.panels.bridgePanel; } } },
+    fetch: (_url: string, init?: { body: string }) => {
+      if (init) { replies.push(JSON.parse(init.body)); return Promise.resolve({ ok: true }); }
+      return new Promise(resolve => polls.push(resolve));
+    },
+    setTimeout: () => 0,
+  });
+  vm.runInContext(source, context);
+  panel!.show(); panel!.show();
+  expect(polls).toHaveLength(1);
+  panel!.hide(); panel!.show();
+  expect(polls).toHaveLength(2);
+  polls[0]({ status: 200, ok: true, json: async () => ({ id: 'stale', action: 'neural_filter', deadline: Date.now()+1000 }) });
+  for (let i=0;i<8;i++) await Promise.resolve();
+  expect(writes).toBe(0);
+  expect(replies).toEqual([{ id: 'stale', ok: false, error: 'queue_timeout: plugin hidden or unloaded before dispatch' }]);
+});

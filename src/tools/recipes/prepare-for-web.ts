@@ -2,7 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { ToolDefinition, ToolResult } from '../../core/tool-registry.js';
 import { resolveExportPath } from '../../lib/export-paths.js';
 import { PhotoshopConnection } from '../../platform/connection.js';
-import { clampInt, executeRecipe, jsString } from './_shared.js';
+import { clampInt, executeRecipe, jsString, toolException } from './_shared.js';
+import { atomicSave } from '../../utils/atomic-save.js';
 
 const TOOL_NAME = 'photoshop_recipe_prepare_for_web';
 
@@ -76,7 +77,7 @@ async function runPrepareForWeb(
     outPath = outPath.replace(`.${ext}`, `-${randomBytes(2).toString('hex')}.${ext}`);
   }
 
-  const body = `
+  const body = (savePath: string) => `
     var src = app.activeDocument;
     var dupName = 'mcp-prepare-' + (new Date()).getTime();
     var dup = src.duplicate(dupName, true);
@@ -103,7 +104,7 @@ async function runPrepareForWeb(
         sharpenLayer.applyUnSharpMask(30, 0.6, 0);
       } catch (eSharpen) {}
 
-      var outFile = new File("${jsString(outPath)}");
+      var outFile = new File("${jsString(savePath)}");
       ${
         format === 'jpeg'
           ? `var jpegOptions = new JPEGSaveOptions(); jpegOptions.quality = ${quality}; jpegOptions.embedColorProfile = true; dup.saveAs(outFile, jpegOptions, true);`
@@ -131,7 +132,20 @@ async function runPrepareForWeb(
     }
   `;
 
-  return executeRecipe(connection, 'Prepare for Web', body);
+  try {
+    let result: ToolResult | undefined;
+    await atomicSave(outPath, format === 'jpeg' ? 'JPEG' : 'PNG', false, async temporary => {
+      result = await executeRecipe(connection, 'Prepare for Web', body(temporary));
+      if (result.isError) throw new Error(result.content.filter(c => c.type === 'text').map(c => c.text).join('\n'));
+    });
+    for (const content of result!.content) {
+      if (content.type !== 'text') continue;
+      const payload = JSON.parse(content.text);
+      payload.output_paths = [outPath];
+      content.text = JSON.stringify(payload, null, 2);
+    }
+    return result!;
+  } catch (error) { return toolException(error); }
 }
 
 function parseFormat(raw: unknown): WebFormat {

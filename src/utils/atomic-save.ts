@@ -13,6 +13,8 @@ export async function atomicSave(
     PSD: ['.psd'],
     JPEG: ['.jpg', '.jpeg'],
     PNG: ['.png'],
+    WEBP: ['.webp'],
+    AVIF: ['.avif'],
   };
   if (!isAbsolute(path) || !allowed[format]?.includes(extension))
     throw new Error('invalid_arguments: absolute path and matching file extension required');

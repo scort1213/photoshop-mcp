@@ -215,11 +215,10 @@ async function applyGradientMask(
     direction,
     startPct,
     endPct,
-    angleDeg
+    angleDeg,
+    true
   );
 
-  let maskAutoCreated = false;
-
   try {
     const raw = await runSnippet(connection, gradientScript);
     const parsed = parseSnippetResult(raw);
@@ -228,31 +227,6 @@ async function applyGradientMask(
     }
     return atomicSuccess('Gradient applied on layer mask', {
       ...parsed,
-      mask_auto_created: false,
-    });
-  } catch (firstError) {
-    const firstMessage = firstError instanceof Error ? firstError.message : String(firstError);
-    if (!/no layer mask/i.test(firstMessage)) {
-      return atomicFailureFromError(firstError);
-    }
-  }
-
-  try {
-    const maskRaw = await runSnippet(connection, ExtendScriptSnippets.createLayerMask());
-    const maskParsed = parseSnippetResult(maskRaw);
-    if (maskParsed?.maskCreated === true) {
-      maskAutoCreated = true;
-    }
-
-    const raw = await runSnippet(connection, gradientScript);
-    const parsed = parseSnippetResult(raw);
-    if (!parsed) {
-      return atomicFailureFromError(new Error(`Snippet returned unparseable payload: ${String(raw)}`));
-    }
-
-    return atomicSuccess('Gradient applied on layer mask', {
-      ...parsed,
-      mask_auto_created: maskAutoCreated,
     });
   } catch (error) {
     return atomicFailureFromError(error);

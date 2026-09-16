@@ -10,6 +10,7 @@ const BRIDGE_PORT = 38452;
 const BRIDGE_BASE = `http://127.0.0.1:${BRIDGE_PORT}`;
 
 let polling = false;
+let pollGeneration = 0;
 
 async function postResult(payload) {
   await fetch(`${BRIDGE_BASE}/result`, {
@@ -80,6 +81,17 @@ async function handleCommand(cmd) {
   const { id, action: cmdAction, params = {} } = cmd;
 
   try {
+    if (cmdAction === 'diagnostic') {
+      if (!Number.isFinite(cmd.deadline) || Date.now() >= cmd.deadline)
+        throw new Error('queue_timeout: diagnostic expired before dispatch');
+      await postResult({ id, ok: true, data: {
+        pluginVersion: '1.1.0', hostVersion: photoshop.app.version,
+        modalAvailable: typeof photoshop.core?.executeAsModal === 'function',
+        activeDocumentId: photoshop.app.documents.length ? photoshop.app.activeDocument.id : null,
+        documents: Array.from(photoshop.app.documents).map(doc => ({ id: doc.id, name: doc.name, width: doc.width, height: doc.height })),
+      } });
+      return;
+    }
     if (cmdAction === 'neural_filter') {
       const checkDeadline = () => {
         if (!Number.isFinite(cmd.deadline) || Date.now() >= cmd.deadline) {
@@ -156,13 +168,17 @@ function checkBatchResult(result) {
   if (failure) throw new Error(failure.message || `Photoshop error ${failure.result}`);
 }
 
-async function pollOnce() {
+async function pollOnce(generation) {
   try {
     const res = await fetch(`${BRIDGE_BASE}/poll?protocol=2`);
     if (res.status === 204) return;
     if (!res.ok) return;
     const cmd = await res.json();
     if (cmd?.id) {
+      if (!polling || generation !== pollGeneration) {
+        await postResult({ id: cmd.id, ok: false, error: 'queue_timeout: plugin hidden or unloaded before dispatch' });
+        return;
+      }
       await handleCommand(cmd);
     }
   } catch {
@@ -173,8 +189,9 @@ async function pollOnce() {
 async function pollLoop() {
   if (polling) return;
   polling = true;
-  while (polling) {
-    await pollOnce();
+  const generation = ++pollGeneration;
+  while (polling && generation === pollGeneration) {
+    await pollOnce(generation);
     await new Promise((r) => setTimeout(r, 400));
   }
 }
@@ -187,7 +204,9 @@ entrypoints.setup({
       },
       hide() {
         polling = false;
+        pollGeneration++;
       },
+      destroy() { polling = false; pollGeneration++; },
     },
   },
 });
