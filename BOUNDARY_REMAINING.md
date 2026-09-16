@@ -74,3 +74,20 @@ quarantine was not cleared and the timed-out action was not replayed.
 The recorded count remains 115 scoped passes, 9 outstanding, and 4 deferred.
 Angle overrides require real alpha-pixel and PSD-reopen acceptance before claiming
 them as verified. Private evidence is in the local `20260916-execution` run.
+# Restart acceptance supersedes the previous busy state
+
+Photoshop responded after restart. Both gradient tools passed 36 real RGB8 cases
+(six angles, three rounds) with alpha geometry and exact PSD-reopen verification.
+The initial acceptance assumed linear alpha incorrectly; the final oracle uses
+Photoshop's measured monotonic horizontal tone curve as a spatial reference.
+Ten fresh stdio MCP read connections passed. Five generative tools rejected PS23
+with `version_unsupported` in three rounds without changing inspected state.
+Generate Image is now classified as version-unsupported: 115 scoped passes,
+8 outstanding tools, and 5 unsupported tools (128 total).
+
+The LUT filename experiment did not load data and was reverted. LUT quarantine,
+explicit recovery, unchanged pixels and PSD reopen passed three refusal rounds;
+LUT rendering is still outstanding. The 13 restored documents were preserved.
+Computer Use initialization, native Codex tool acceptance, real UXP and the
+uninterrupted 60-minute PS soak remain outstanding. Ten read reconnections do
+not substitute for the mixed-write soak. Private evidence: `20260916-restart`.
