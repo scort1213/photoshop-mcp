@@ -102,3 +102,19 @@ Arbitrary JSX and recorded Photoshop actions are trusted code. Target checks
 are not a sandbox; such code can explicitly switch documents or access files.
 No claim is made that an executing Adobe operation can be forcibly cancelled or
 rolled back. An in-flight timeout requires inspection and explicit recovery.
+
+## Authorized coexistence soak
+
+If the operator explicitly permits running alongside business documents, use
+`coexist_soak.py <test-document-id> 3600 <allowed-other-ids...>` for Photoshop.
+Use `'*'` only when the authorization also covers changing work documents.
+The target must already be open inside the run directory. Every edit, preview,
+and save pins that ID; only the test output path is written. After a successful
+call the previous tab is restored if the active tab is still the test target.
+Changes in other documents' metadata during a call stop the run for attribution.
+No documents are closed and no Adobe processes are stopped. The ordinary
+fault/lifecycle guard remains strict and does not inherit this exception.
+
+Manual editing and clients bypassing the application mutex cannot be serialized
+by this harness. Metadata equality is not proof of pixel immutability. Coexistence
+results must be labeled separately from exclusive fault-injection acceptance.

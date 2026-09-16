@@ -148,7 +148,7 @@ Dim photoshopApp
 Set photoshopApp = CreateObject("Photoshop.Application")
 
 If Err.Number <> 0 Then
-    Emit "ERROR: Failed to connect to Photoshop - " & Err.Description
+    Emit "ERROR: COM " & CStr(Err.Number) & " (" & Err.Source & "): Failed to connect to Photoshop - " & Err.Description
     WScript.Quit 1
 End If
 
@@ -157,7 +157,7 @@ Dim result
 result = photoshopApp.DoJavaScript("${loadScript}")
 
 If Err.Number <> 0 Then
-    Emit "ERROR: " & Err.Description
+    Emit "ERROR: COM " & CStr(Err.Number) & " (" & Err.Source & "): " & Err.Description
     WScript.Quit 1
 Else
     Emit result
@@ -170,7 +170,7 @@ End If
     
     // Check for error
     if (trimmed.startsWith('ERROR:')) {
-      throw new Error(trimmed.substring(6).trim());
+      throw new Error(trimmed.substring(6).trim() || 'Adobe bridge returned an error without a description; inspect document state before recovery');
     }
 
     return parseExtendScriptPayload(trimmed);
