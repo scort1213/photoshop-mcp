@@ -76,6 +76,10 @@ when the application window is unavailable; preview remains explicitly unverifie
 The same flag is supported by the Illustrator real-fixture check. Stored emoji
 characters do not prove that the selected font renders their glyphs correctly;
 inspect the exported image and supply a suitable font where needed.
+`python scripts/boundary/illustrator_cleanup_cases.py` verifies three forced MCP
+exits after observed Adobe dispatch, followed by state inspection, explicit
+recovery and reclamation of dead owners' script directories. Do not run this
+fault injection during an Illustrator soak.
 
 ## Evidence and limits
 
