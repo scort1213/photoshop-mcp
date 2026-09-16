@@ -42,7 +42,7 @@ import { createDataTools } from '../tools/data-tools.js';
 import { createStackTools } from '../tools/stack-tools.js';
 import { createExportTools } from '../tools/export-tools.js';
 
-const READ_TOOLS = new Set(['photoshop_ping', 'photoshop_get_version', 'photoshop_get_capabilities', 'photoshop_list_documents', 'photoshop_get_document_info', 'photoshop_get_state', 'photoshop_get_layers', 'photoshop_get_history', 'photoshop_recover_connection']);
+const READ_TOOLS = new Set(['photoshop_ping', 'photoshop_get_version', 'photoshop_get_capabilities', 'photoshop_list_documents', 'photoshop_get_document_info', 'photoshop_get_state', 'photoshop_get_layers', 'photoshop_get_history', 'photoshop_list_fonts', 'photoshop_get_selection_bounds', 'photoshop_list_datasets', 'photoshop_recover_connection']);
 const ARTBOARD_NON_EDIT_TOOLS = new Set([...READ_TOOLS, 'photoshop_open_image', 'photoshop_create_document', 'photoshop_set_active_document', 'photoshop_close_document', 'photoshop_save_document', 'photoshop_get_preview', 'photoshop_execute_script']);
 
 export interface PhotoshopMCPServerOptions {

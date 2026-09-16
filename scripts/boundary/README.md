@@ -23,6 +23,7 @@ application (`ps`, then `ai`):
 ```powershell
 python scripts/boundary/boundary_suite.py smoke ps
 python scripts/boundary/fault_tests.py ps
+python scripts/boundary/cross_client_faults.py ps
 # Required for the Illustrator application-termination test only:
 $env:ADOBE_BOUNDARY_ILLUSTRATOR_EXE = 'D:\path\Illustrator.exe'
 python scripts/boundary/lifecycle_tests.py ps
@@ -40,6 +41,11 @@ The soak checks available RAM (4 GiB), C: free space (15 GiB), and D: free space
 it never becomes a pass. Create `ps-stop` or `ai-stop` inside the run directory
 for a graceful stop before the next cycle. Remove the stop file before restarting.
 The 60-minute timer starts over after an interruption.
+During an Illustrator soak, the exact minimized-window `isError` response is an
+expected negative capture check only when it contains no image. It increments
+`minimized_refusals`; actual captures increment `preview_successes`. All other
+capture failures still stop the run. Report both counters, including zero
+successful captures; never describe a refusal as a successful screenshot.
 
 `python scripts/boundary/content_cases.py` adds bounded Photoshop mask-pixel,
 duplicate-layer, lock, smart-object, text and 16-bit color-mode assertions after
@@ -61,6 +67,15 @@ against already modified fixture copies; prepare a fresh run instead.
 Artboard documents exercise explicit rejection of editing, followed by an
 unchanged save/reopen check. Their `edit_boundary` is recorded as unsupported,
 not as a successful edit. Non-artboard PSD/PSB files exercise editable text.
+
+`python scripts/boundary/illustrator_content_cases.py 1` creates a fresh case
+directory for editable Unicode, two artboards, clipping groups, missing fonts,
+missing/restored image links and pixel-checked PNG/JPEG exports. Use distinct
+round numbers for repetitions. `--skip-preview` permits document-only checks
+when the application window is unavailable; preview remains explicitly unverified.
+The same flag is supported by the Illustrator real-fixture check. Stored emoji
+characters do not prove that the selected font renders their glyphs correctly;
+inspect the exported image and supply a suitable font where needed.
 
 ## Evidence and limits
 

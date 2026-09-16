@@ -39,7 +39,7 @@ def main(app):
                 c.script('app.open(new File('+safe_path+'));"opened";',target)
                 baseline=c.script("var d=app.activeDocument;[d.layers.length,d.textFrames.length,d.pageItems.length,d.artboards.length].join(',');",path)
                 c.script("var d=app.activeDocument;var l=d.layers.add();l.name='边界验收副本';var t=l.textFrames.add();t.contents='边界验收副本';t.position=[30,60];d.save();'saved';",path)
-                c.call('view')
+                if '--skip-preview' not in sys.argv:c.call('view')
                 c.script('app.activeDocument.close(SaveOptions.DONOTSAVECHANGES);"closed";',path)
                 c.script('app.open(new File('+safe_path+'));"opened";',target)
                 assert c.script('app.activeDocument.layers[0].textFrames[0].contents;',path)=='边界验收副本'
@@ -47,7 +47,7 @@ def main(app):
                 assert after==baseline,(baseline,after)
                 c.script('app.activeDocument.close(SaveOptions.DONOTSAVECHANGES);"closed";',path)
             with open(fixture['source'],'rb') as source:assert hashlib.file_digest(source,'sha256').hexdigest()==fixture['sha256']
-            evidence.append({'file':Path(path).name,'bytes':fixture['bytes'],'seconds':time.time()-started,'before_resources':before_resources,'save_reopen_structure':'passed','edit_boundary':'unsupported_artboard_rejected' if app=='ps' and artboard else 'editable_text_passed','original_hash':'unchanged'})
+            evidence.append({'file':Path(path).name,'bytes':fixture['bytes'],'seconds':time.time()-started,'before_resources':before_resources,'save_reopen_structure':'passed','edit_boundary':'unsupported_artboard_rejected' if app=='ps' and artboard else 'editable_text_passed','preview':'not_verified' if app=='ai' and '--skip-preview' in sys.argv else 'passed','original_hash':'unchanged'})
             (ROOT/f'{app}-real-fixtures.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding='utf-8')
             print(app,'REAL FIXTURE PASS',Path(path).name,flush=True)
     finally:c.close()

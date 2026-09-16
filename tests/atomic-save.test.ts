@@ -22,14 +22,14 @@ it('never replaces an existing file without explicit overwrite', async () => {
   expect(called).toBe(false);
   expect(await readFile(path, 'utf8')).toBe('original');
 });
-it('does not publish partial output when the writer fails or disk is full', async () => {
+it.each(['ENOSPC', 'ENOMEM', 'EACCES'])('does not publish partial output after simulated %s', async errorCode => {
   const path = join(root, 'output.png');
   await expect(
     atomicSave(path, 'PNG', false, async (temp) => {
       await writeFile(temp, 'partial');
-      throw new Error('ENOSPC');
+      throw new Error(errorCode);
     })
-  ).rejects.toThrow('ENOSPC');
+  ).rejects.toThrow(errorCode);
   expect(await readdir(root)).toEqual([]);
 });
 it('publishes complete output and removes staging files', async () => {

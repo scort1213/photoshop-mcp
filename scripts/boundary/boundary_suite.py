@@ -45,7 +45,7 @@ class Client:
             if 'error' in response: raise RuntimeError(response['error'])
             return response['result']
         finally: self.waiters.pop(seq,None)
-    def call(self,name,args=None,error=False):
+    def call(self,name,args=None,error=False,allow_minimized=False):
         started=time.time(); result=self.request('tools/call',dict(name=name,arguments=args or {}))
         logged=json.loads(json.dumps(result))
         for i,c in enumerate(logged.get('content',[])):
@@ -53,6 +53,10 @@ class Client:
                 path=ROOT/f'{self.app}-{time.time_ns()}-{i}.png';path.write_bytes(base64.b64decode(c.pop('data')));c['saved_image']=str(path)
         with trace_lock:
             with TRACE.open('a',encoding='utf-8') as f:f.write(json.dumps(dict(at=started,seconds=time.time()-started,app=self.app,name=name,args=args,result=logged),ensure_ascii=False)+'\n')
+        if allow_minimized and self.app=='ai' and name=='view' and result.get('isError'):
+            contents=result.get('content',[])
+            if (len(contents)==1 and contents[0].get('type')=='text' and contents[0].get('text')=='Failed to capture screenshot: Illustrator is minimized. Restore its window before capturing.'):
+                return {'preview_refused':'minimized'}
         if bool(result.get('isError'))!=error: raise AssertionError(f'{name}: expected isError={error}: {str(result)[:1800]}')
         texts=[c['text'] for c in result.get('content',[]) if c.get('type')=='text']
         text='\n'.join(texts)
@@ -159,7 +163,7 @@ def smoke(app):
 def soak(app,seconds=3600):
     c=Client(app)
     target=json.loads((ROOT/f'{app}-smoke.json').read_text(encoding='utf-8'))['target']
-    started=time.monotonic(); count=0; reconnects=0
+    started=time.monotonic(); count=0; reconnects=0; preview_successes=0; minimized_refusals=0
     try:
         from real_fixtures import resources
         while time.monotonic()-started < seconds:
@@ -171,25 +175,29 @@ def soak(app,seconds=3600):
                 result=c.script('var d=app.activeDocument;d.activeLayer=d.layers[0];d.activeLayer.name='+json.dumps(value)+';return {name:d.activeLayer.name,id:d.id,layers:d.layers.length};',target)
                 assert result['name']==value and result['id']==target,result
                 c.call('photoshop_get_state',{'document_id':target})
-                if count%12==0:c.call('photoshop_get_preview',{'document_id':target,'max_dimension_px':480})
+                if count%12==0:
+                    c.call('photoshop_get_preview',{'document_id':target,'max_dimension_px':480});preview_successes+=1
                 if count%30==0:c.call('photoshop_save_document',{'document_id':target,'path':str(ROOT/'ps-soak.psd'),'format':'PSD','overwrite':True})
             else:
                 result=c.script('var d=app.activeDocument;d.layers[0].name='+json.dumps(value)+';d.textFrames[0].contents='+json.dumps(value)+';d.layers[0].name;',target)
                 assert result==value,result
                 c.state()
-                if count%12==0:c.call('view')
+                if count%12==0:
+                    preview=c.call('view',allow_minimized=True)
+                    if isinstance(preview,dict) and preview.get('preview_refused')=='minimized':minimized_refusals+=1
+                    else:preview_successes+=1
                 if count%30==0:c.script('app.activeDocument.save();"saved";',target)
             count+=1
             if reconnects<10 and count%6==0:
                 c.close();c=Client(app);reconnects+=1
-            status={'app':app,'elapsed_seconds':time.monotonic()-started,'cycles':count,'reconnects':reconnects,'complete':False,'last_ok':time.time()}
+            status={'app':app,'elapsed_seconds':time.monotonic()-started,'cycles':count,'reconnects':reconnects,'preview_successes':preview_successes,'minimized_refusals':minimized_refusals,'complete':False,'last_ok':time.time()}
             (ROOT/f'{app}-soak-status.json').write_text(json.dumps(status),encoding='utf-8')
             time.sleep(5)
         status['complete']=True;status['elapsed_seconds']=time.monotonic()-started
         (ROOT/f'{app}-soak-status.json').write_text(json.dumps(status),encoding='utf-8')
         print(app,'SOAK PASS',status,flush=True)
     except Exception as error:
-        status={'app':app,'elapsed_seconds':time.monotonic()-started,'cycles':count,'reconnects':reconnects,'complete':False,'halted_reason':str(error)}
+        status={'app':app,'elapsed_seconds':time.monotonic()-started,'cycles':count,'reconnects':reconnects,'preview_successes':preview_successes,'minimized_refusals':minimized_refusals,'complete':False,'halted_reason':str(error)}
         (ROOT/f'{app}-soak-status.json').write_text(json.dumps(status),encoding='utf-8')
         raise
     finally:c.close()
