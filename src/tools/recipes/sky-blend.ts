@@ -130,18 +130,15 @@ async function runSkyBlend(
           return nativeResult;
         }
       }
-      if (args.use_native_sky === true) {
-        return nativeResult;
-      }
+      // A failed native edit can be partial. Never start a fallback write.
+      return nativeResult;
     } catch (error) {
-      if (args.use_native_sky === true) {
-        return toolFailure({
+      return toolFailure({
           ok: false,
           code: 'generative_unavailable',
           message: error instanceof Error ? error.message : String(error),
           suggested_next_tool: 'photoshop_get_capabilities',
         });
-      }
     }
   }
 
@@ -190,7 +187,8 @@ async function runSkyBlend(
     var fromYPx = docH * (${endpoints.fromV} / 100.0);
     var toXPx = docW * (${endpoints.toH} / 100.0);
     var toYPx = docH * (${endpoints.toV} / 100.0);
-    __mcp_gradientFillLayerMask(fromXPx, fromYPx, toXPx, toYPx, ${endpoints.reverse ? 'true' : 'false'});
+    // Reveal the sky above the horizon and hide it below the horizon.
+    __mcp_gradientFillLayerMask(fromXPx, fromYPx, toXPx, toYPx, ${endpoints.reverse ? 'false' : 'true'});
 
     try {
       doc.activeChannels = doc.componentChannels;

@@ -1,4 +1,5 @@
 import { readdir, stat } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 import { extname, isAbsolute, join } from 'node:path';
 import { ToolDefinition, ToolResult } from '../../core/tool-registry.js';
 import { resolveExportPath } from '../../lib/export-paths.js';
@@ -187,10 +188,10 @@ async function runBatchWatermark(
   }
 
   const useText = text.length > 0;
-  const stamp = Date.now();
+  const stamp = Date.now() + '-' + randomBytes(4).toString('hex');
   const jobsLiteral = assets
-    .map((assetPath) => {
-      const outPath = resolveExportPath(`wm-${baseNameWithoutExt(assetPath)}-${stamp}.jpg`, 'jpg');
+    .map((assetPath, index) => {
+      const outPath = resolveExportPath(`wm-${baseNameWithoutExt(assetPath)}-${stamp}-${index}.jpg`, 'jpg');
       return `{ asset: "${jsString(assetPath)}", out: "${jsString(outPath)}" }`;
     })
     .join(', ');
@@ -254,6 +255,15 @@ async function runBatchWatermark(
     }
 
     var jobs = [${jobsLiteral}];
+    for (var check = 0; check < jobs.length; check++) {
+      var inputPath = new File(jobs[check].asset).fsName.toLowerCase();
+      for (var openIndex = 0; openIndex < app.documents.length; openIndex++) {
+        var openPath = null;
+        try { openPath = app.documents[openIndex].fullName.fsName; } catch (unsaved) {}
+        if (openPath && openPath.toLowerCase() === inputPath)
+          throw new Error('target_conflict: a watermark source is already open; use saved copies');
+      }
+    }
     var produced = [];
     var failed = [];
     var previousDialogs = app.displayDialogs;
@@ -269,6 +279,7 @@ async function runBatchWatermark(
         ${watermarkSnippet}
 
         var outFile = new File(spec.out);
+        if (outFile.exists) throw new Error('output_exists: ' + spec.out);
         var jpegOptions = new JPEGSaveOptions();
         jpegOptions.quality = ${quality};
         jpegOptions.embedColorProfile = true;
@@ -276,6 +287,7 @@ async function runBatchWatermark(
         produced.push(outFile.fsName);
       } catch (eJob) {
         failed.push({ file: spec.asset, error: String(eJob.message || eJob) });
+        break;
       } finally {
         if (doc) {
           try { doc.close(SaveOptions.DONOTSAVECHANGES); } catch (eClose) {}

@@ -1,6 +1,18 @@
 import { expect, it } from 'vitest';
 import { runInNewContext } from 'node:vm';
 import { ExtendScriptSnippets, MCP_LAYER_MASK_HELPERS } from '../src/api/extendscript.js';
+import { RECIPE_ACTION_HELPERS } from '../src/tools/recipes/_shared.js';
+
+it.each([true, false])('recipe masks use the certified mask channel and verify creation=%s', created => {
+  const modes: string[] = [];
+  const run = () => runInNewContext('(function(){' + RECIPE_ACTION_HELPERS + `
+    function __mcp_makeLayerMaskAtChannel(mode){ record(mode); }
+    function __mcp_hasLayerMaskAM(){ return created; }
+    __mcp_makeLayerMaskRevealSelection();
+  })()`, { record: (mode: string) => modes.push(mode), created });
+  if (created) run(); else expect(run).toThrow('layer mask was not created');
+  expect(modes).toEqual(['revealSelection']);
+});
 
 it.each([false, true])('restores component channels after saving a selection, store failure=%s', fails => {
   const rgb = [{ name: 'RGB' }];

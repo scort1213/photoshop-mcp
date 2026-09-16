@@ -1,4 +1,5 @@
 import { readdir, stat } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 import { extname, isAbsolute, join } from 'node:path';
 import { ToolDefinition, ToolResult } from '../../core/tool-registry.js';
 import { resolveExportPath } from '../../lib/export-paths.js';
@@ -124,9 +125,9 @@ async function runBatchMockupReplace(
   }
 
   const variantsLiteral = assets
-    .map((assetPath) => {
+    .map((assetPath, index) => {
       const baseName = baseNameWithoutExt(assetPath);
-      const outPath = resolveExportPath(`mockup-${baseName}-${Date.now()}.jpg`, 'jpg');
+      const outPath = resolveExportPath(`mockup-${baseName}-${Date.now()}-${randomBytes(4).toString('hex')}-${index}.jpg`, 'jpg');
       return `{ asset: "${jsString(assetPath)}", base: "${jsString(baseName)}", out: "${jsString(outPath)}" }`;
     })
     .join(', ');
@@ -161,6 +162,7 @@ async function runBatchMockupReplace(
         if (!rep.ok) return rep;
 
         var outFile = new File(spec.out);
+        if (outFile.exists) throw new Error('output_exists: ' + spec.out);
         var jpegOptions = new JPEGSaveOptions();
         jpegOptions.quality = ${quality};
         jpegOptions.embedColorProfile = true;
@@ -184,7 +186,7 @@ async function runBatchMockupReplace(
     return {
       ok: true,
       summary: 'Rendered ' + produced.length + ' mockup variant(s) into the export directory',
-      undo_history_states_consumed: produced.length,
+      undo_history_states_consumed: 1,
       output_paths: paths,
       details: { variants: produced, target_layer: targetName }
     };

@@ -109,13 +109,8 @@ function __mcp_applyFrequencyHighFromLow(lowLayer, highLayer) {
 }
 
 function __mcp_makeLayerMaskRevealSelection() {
-  var desc = new ActionDescriptor();
-  desc.putClass(__mcp_s2t('new'), __mcp_s2t('channel'));
-  var atRef = new ActionReference();
-  atRef.putEnumerated(__mcp_s2t('layer'), __mcp_s2t('ordinal'), __mcp_s2t('targetEnum'));
-  desc.putReference(__mcp_s2t('at'), atRef);
-  desc.putEnumerated(__mcp_s2t('using'), __mcp_s2t('userMaskEnabled'), __mcp_s2t('revealSelection'));
-  executeAction(__mcp_s2t('make'), desc, DialogModes.NO);
+  __mcp_makeLayerMaskAtChannel('revealSelection');
+  if (!__mcp_hasLayerMaskAM()) throw new Error('partial_completion: layer mask was not created');
 }
 
 function __mcp_makeHueSatAdjustmentLayer(hue, saturation, lightness, colorize) {

@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ToolDefinition, ToolResult } from '../../core/tool-registry.js';
@@ -199,8 +199,8 @@ async function runCsvToCards(
   const columns = rows[0].map((c) => c.trim()).filter(Boolean);
   const dataRows = rows.slice(1);
   const xml = buildVariablesXml(columns, dataRows);
-  const xmlPath = join(tmpdir(), `photoshop-mcp-datasets-${Date.now()}.xml`);
-  writeFileSync(xmlPath, xml, 'utf8');
+  const temporaryDir = mkdtempSync(join(tmpdir(), 'photoshop-mcp-datasets-'));
+  const xmlPath = join(temporaryDir, 'variables.xml');
 
   const ext = format === 'PNG' ? 'png' : 'jpg';
   const body = `
@@ -208,6 +208,9 @@ async function runCsvToCards(
       return { ok: false, code: 'no_active_document', message: 'Open the template PSD first', suggested_next_tool: 'photoshop_open_image' };
     }
     var doc = app.activeDocument;
+    if (typeof doc.importVariables !== 'function' || typeof doc.dataSets === 'undefined') {
+      return { ok: false, code: 'unsupported', message: 'Dataset DOM is unavailable in this Photoshop bridge; import CSV using Image > Variables and export Data Sets As Files' };
+    }
     var xmlFile = new File("${jsString(xmlPath)}");
     if (!xmlFile.exists) {
       return { ok: false, code: 'file_not_found', message: 'variables XML missing: ${jsString(xmlPath)}' };
@@ -267,5 +270,14 @@ async function runCsvToCards(
     };
   `;
 
-  return executeStandaloneRecipe(connection, body);
+  let uncertain = false;
+  try {
+    writeFileSync(xmlPath, xml, 'utf8');
+    const result = await executeStandaloneRecipe(connection, body);
+    uncertain = JSON.stringify(result).includes('outcome_unknown');
+    return result;
+  } finally {
+    // Keep inputs alive if Adobe could still be executing a timed-out command.
+    if (!uncertain) rmSync(temporaryDir, { recursive: true, force: true });
+  }
 }

@@ -2508,8 +2508,8 @@ export const ExtendScriptSnippets = {
     app.doAction("${jsString(actionName)}", "${jsString(actionSetName)}");
     
     return { 
-      action: '${actionName}',
-      set: '${actionSetName}'
+      action: ${jsStringLiteral(actionName)},
+      set: ${jsStringLiteral(actionSetName)}
     };
   `,
 
@@ -3368,6 +3368,18 @@ export const ExtendScriptSnippets = {
     app.displayDialogs = DialogModes.NO;
 
     var lutFile = new File("${escaped}");
+    var lutInput = "${escaped}";
+    if (!lutFile.exists && lutInput.indexOf('/') < 0 && lutInput.indexOf('\\\\') < 0 && lutInput.indexOf(':') < 0)
+      lutFile = new File(app.path.fsName + '/Presets/3DLUTs/' + "${escaped}");
+    if (!lutFile.exists) throw new Error('file_not_found: LUT file not found');
+    var lutExtension = lutFile.name.split('.').pop().toLowerCase();
+    var lutFormats = { cube: 'LUTFormatCUBE', look: 'LUTFormatLOOK', '3dl': 'LUTFormat3DL' };
+    if (!lutFormats[lutExtension]) throw new Error('invalid_argument: expected .cube, .look or .3dl LUT');
+    lutFile.encoding = 'BINARY';
+    if (!lutFile.open('r')) throw new Error('file_not_readable: LUT file');
+    var lutData;
+    try { lutData = lutFile.read(); } finally { lutFile.close(); }
+    if (!lutData.length) throw new Error('invalid_argument: empty LUT file');
     var desc = new ActionDescriptor();
     var ref = new ActionReference();
     ref.putClass(sTID('adjustmentLayer'));
@@ -3375,15 +3387,25 @@ export const ExtendScriptSnippets = {
     var using = new ActionDescriptor();
     var lookup = new ActionDescriptor();
     lookup.putEnumerated(sTID('lookupType'), sTID('colorLookupType'), sTID('3DLUT'));
-    if (lutFile.exists) {
-      lookup.putPath(sTID('LUT3DFileName'), lutFile);
-    } else {
-      // Built-in LUT name (e.g. 'Crisp_Warm.3dl', 'Kodak 5218 Fuji 3510.3dl')
-      lookup.putString(sTID('LUT3DFileName'), "${escaped}");
-    }
-    using.putObject(sTID('type'), sTID('colorLookup'), lookup);
+    lookup.putEnumerated(sTID('LUTFormat'), sTID('LUTFormatType'), sTID(lutFormats[lutExtension]));
+    lookup.putData(sTID('LUT3DFileData'), lutData);
+    lookup.putString(sTID('LUT3DFileName'), lutFile.fsName);
+    using.putClass(sTID('type'), sTID('colorLookup'));
     desc.putObject(sTID('using'), sTID('adjustmentLayer'), using);
     executeAction(sTID('make'), desc, DialogModes.NO);
+    var setLookup = new ActionDescriptor(), targetLookup = new ActionReference();
+    targetLookup.putEnumerated(sTID('adjustmentLayer'), sTID('ordinal'), sTID('targetEnum'));
+    setLookup.putReference(sTID('null'), targetLookup);
+    setLookup.putObject(sTID('to'), sTID('colorLookup'), lookup);
+    executeAction(sTID('set'), setLookup, DialogModes.NO);
+    var lookupState = new ActionReference();
+    lookupState.putEnumerated(sTID('layer'), sTID('ordinal'), sTID('targetEnum'));
+    var lookupAdjustment = executeActionGet(lookupState).getList(sTID('adjustment')).getObjectValue(0);
+    var hasPayload = lookupAdjustment.hasKey(sTID('profile')) || lookupAdjustment.hasKey(sTID('LUT3DFileData'));
+    if (!hasPayload && lookupAdjustment.hasKey(sTID('legacyContentData')))
+      hasPayload = lookupAdjustment.getData(sTID('legacyContentData')).length > 24;
+    if (!hasPayload)
+      throw new Error('partial_completion: Photoshop created an empty Color Lookup layer but did not load LUT data; inspect the new layer before recovering');
 
     return {
       created: true,
@@ -3565,12 +3587,10 @@ export const ExtendScriptSnippets = {
       throw new Error('No active document');
     }
     var doc = app.activeDocument;
+    if (typeof doc.dataSets === 'undefined')
+      throw new Error('unsupported: dataset DOM is unavailable in this Photoshop bridge; use Image > Variables with CSV or tab-delimited data');
     var names = [];
-    try {
-      for (var i = 0; i < doc.dataSets.length; i++) {
-        names.push(doc.dataSets[i].name);
-      }
-    } catch (e) {}
+    for (var i = 0; i < doc.dataSets.length; i++) names.push(doc.dataSets[i].name);
     var active = null;
     try { active = doc.activeDataSet ? doc.activeDataSet.name : null; } catch (eActive) {}
     return {
@@ -3589,6 +3609,8 @@ export const ExtendScriptSnippets = {
     if (app.documents.length === 0) {
       throw new Error('No active document');
     }
+    if (typeof app.activeDocument.importVariables !== 'function' || typeof app.activeDocument.dataSets === 'undefined')
+      throw new Error('unsupported: XML dataset import is unavailable in this Photoshop bridge; Photoshop UI imports CSV or tab-delimited data');
     var xmlFile = new File("${escaped}");
     if (!xmlFile.exists) {
       throw new Error('variables_xml_not_found: ${escaped}');
@@ -3623,6 +3645,8 @@ export const ExtendScriptSnippets = {
       throw new Error('No active document');
     }
     var doc = app.activeDocument;
+    if (typeof doc.dataSets === 'undefined')
+      throw new Error('unsupported: dataset DOM is unavailable in this Photoshop bridge; use File > Export > Data Sets As Files');
     if (!doc.dataSets || doc.dataSets.length === 0) {
       throw new Error('no_datasets: active document has no data sets — import a variables XML first');
     }
@@ -3851,33 +3875,45 @@ export const ExtendScriptSnippets = {
    * Classic "remove tourists with median stack" without any generative AI.
    */
   imageStackMode: (files: string[], mode: string) => {
-    const filesJson = JSON.stringify(files.map((f) => jsString(f)));
+    const filesJson = JSON.stringify(files);
     const modeId = jsString(mode);
     return `
     ${helperFunctions}
 
-    var files = [${filesJson}];
+    var files = ${filesJson};
     if (files.length < 2) {
       throw new Error('stack_needs_two_files: image stack requires at least 2 images');
     }
     app.displayDialogs = DialogModes.NO;
-
+    if (!app.featureEnabled('ImageStack Creation')) throw new Error('unsupported: image stack feature unavailable');
+    for (var check = 0; check < files.length; check++) {
+      var input = new File(files[check]);
+      if (!input.exists) throw new Error('stack_file_not_found: ' + files[check]);
+      for (var openIndex = 0; openIndex < app.documents.length; openIndex++) {
+        var openPath = null;
+        try { openPath = app.documents[openIndex].fullName.fsName; } catch (unsaved) {}
+        if (openPath && openPath.toLowerCase() === input.fsName.toLowerCase())
+          throw new Error('target_conflict: a stack input is already open; use a saved copy');
+      }
+    }
     var base = null;
-    var opened = [];
     for (var i = 0; i < files.length; i++) {
       var f = new File(files[i]);
-      if (!f.exists) {
-        throw new Error('stack_file_not_found: ' + files[i]);
-      }
-      var d = app.open(f);
-      opened.push(d);
-      if (!base) {
-        base = d;
-      } else {
-        d.selection.selectAll();
-        d.activeLayer.copy();
-        base.paste();
-        d.close(SaveOptions.DONOTSAVECHANGES);
+      var d = null, merged = null;
+      try {
+        d = app.open(f);
+        merged = d.duplicate('MCP Stack Input', true);
+        if (!base) {
+          base = merged; merged = null;
+          if (base.activeLayer.isBackgroundLayer) base.activeLayer.isBackgroundLayer = false;
+        } else {
+          if (merged.width.as('px') !== base.width.as('px') || merged.height.as('px') !== base.height.as('px'))
+            throw new Error('invalid_argument: stack inputs must have equal pixel dimensions');
+          merged.activeLayer.duplicate(base, ElementPlacement.PLACEATBEGINNING);
+        }
+      } finally {
+        if (merged) merged.close(SaveOptions.DONOTSAVECHANGES);
+        if (d) d.close(SaveOptions.DONOTSAVECHANGES);
       }
     }
     app.activeDocument = base;
@@ -3890,17 +3926,17 @@ export const ExtendScriptSnippets = {
     executeAction(sTID('selectAllLayers'), selDesc, DialogModes.NO);
     executeAction(sTID('newPlacedLayer'), undefined, DialogModes.NO);
 
+    // Renderer IDs match Adobe's installed Presets/Scripts/Statistics.jsx.
+    var renderers = { stackModeMean: 'avrg', stackModeMedian: 'medn', stackModeMaximum: 'maxx',
+      stackModeMinimum: 'minn', stackModeSummation: 'summ', stackModeStandardDeviation: 'stdv' };
     var setDesc = new ActionDescriptor();
-    var setRef = new ActionReference();
-    setRef.putEnumerated(cTID('Lyr '), cTID('Ordn'), cTID('Trgt'));
-    setDesc.putReference(cTID('null'), setRef);
-    var smart = new ActionDescriptor();
-    smart.putEnumerated(sTID('stackMode'), sTID('stackMode'), sTID("${modeId}"));
-    setDesc.putObject(cTID('T   '), sTID('smartObject'), smart);
-    executeAction(cTID('setd'), setDesc, DialogModes.NO);
+    setDesc.putString(cTID('Nm  '), "${modeId}");
+    setDesc.putClass(sTID('imageStackPlugin'), cTID(renderers["${modeId}"]));
+    executeAction(sTID('applyImageStackPluginRenderer'), setDesc, DialogModes.NO);
 
     return {
       stacked: true,
+      document_id: base.id,
       file_count: files.length,
       mode: "${modeId}",
       layer_name: base.activeLayer.name

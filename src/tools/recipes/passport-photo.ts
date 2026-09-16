@@ -2,7 +2,7 @@ import { ToolDefinition, ToolResult } from '../../core/tool-registry.js';
 import { resolveExportPath } from '../../lib/export-paths.js';
 import { PhotoshopConnection } from '../../platform/connection.js';
 import { PhotoshopDetector } from '../../platform/detector.js';
-import { clampInt, executeRecipe, jsString, toolFailure } from './_shared.js';
+import { clampInt, executeStandaloneRecipe, jsString, toolFailure } from './_shared.js';
 
 const TOOL_NAME = 'photoshop_recipe_passport_photo';
 
@@ -98,6 +98,7 @@ async function runPassportPhoto(
   const body = `
     var src = app.activeDocument;
     var doc = src.duplicate('mcp-passport-' + (new Date()).getTime(), true);
+    var sheet = null;
 
     function failPassport(errObj) {
       try { doc.close(SaveOptions.DONOTSAVECHANGES); } catch (eCloseF) {}
@@ -181,7 +182,7 @@ async function runPassportPhoto(
         try { doc.activeLayer.isBackgroundLayer = false; } catch (eBg) {}
         var cols = Math.floor(${SHEET_W} / ${spec.width});
         var rows = Math.floor(${SHEET_H} / ${spec.height});
-        var sheet = app.documents.add(
+        sheet = app.documents.add(
           UnitValue(${SHEET_W}, 'px'),
           UnitValue(${SHEET_H}, 'px'),
           300,
@@ -191,7 +192,9 @@ async function runPassportPhoto(
         );
         for (var r = 0; r < rows; r++) {
           for (var c = 0; c < cols; c++) {
+            app.activeDocument = doc;
             var copyLayer = doc.artLayers[0].duplicate(sheet, ElementPlacement.PLACEATEND);
+            app.activeDocument = sheet;
             var cb = copyLayer.bounds;
             copyLayer.translate(
               new UnitValue(c * ${spec.width} - cb[0].as('px'), 'px'),
@@ -203,6 +206,7 @@ async function runPassportPhoto(
         var sheetFile = new File("${jsString(sheetPath)}");
         sheet.saveAs(sheetFile, jpegOptions, true);
         sheet.close(SaveOptions.DONOTSAVECHANGES);
+        sheet = null;
         paths.push(sheetFile.fsName);
       }
 
@@ -216,10 +220,11 @@ async function runPassportPhoto(
         details: { spec: '${spec.slug}', width: ${spec.width}, height: ${spec.height}, sheet: ${makeSheet ? 'true' : 'false'}, sheet_copies: sheetCopies }
       };
     } catch (ePassport) {
+      if (sheet) { try { sheet.close(SaveOptions.DONOTSAVECHANGES); } catch (eSheetClose) {} }
       try { doc.close(SaveOptions.DONOTSAVECHANGES); } catch (eClose) {}
       return { ok: false, code: 'recipe_runtime_error', message: 'Passport photo failed: ' + (ePassport.message || ePassport) };
     }
   `;
 
-  return executeRecipe(connection, 'Passport Photo', body);
+  return executeStandaloneRecipe(connection, body);
 }

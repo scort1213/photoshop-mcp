@@ -2,6 +2,22 @@
 
 This is a development checkpoint, not a completed release acceptance.
 
+## Resumed acceptance (2026-09-16)
+
+The current private ledger records **58 prior scoped passes, 57 additional limited passes, nine outstanding tools and four previously unsupported tools** (128 total). The resumed session added 28 tools with three real-app rounds. It also reran the artboard geometry cases and completed history rejection, hidden-descendant refusal and artboard close-with-save checks. The earlier checkpoint below is retained as history and its counts are superseded by this section.
+
+Real rendering checks exposed and fixed source-history pollution in duplicate-only exports, visual reordering during layer organization, an incorrect recipe mask target, reversed sky blending, malformed stack input arrays and stack renderer calls, and passport sheet document targeting. Batch watermark failure now stops subsequent jobs; duplicate basenames receive distinct output paths. The actual output pixels, document IDs, source hashes and reopen results are recorded in the private run directory.
+
+Dataset DOM calls are unavailable in the tested PS23 bridge. They now refuse explicitly instead of claiming an empty successful list; refusal and cleanup passed three rounds. LUT loading still failed to change pixels; an empty adjustment now raises partial_completion and keeps subsequent writes blocked. Neither refusal-only path counts as working functionality.
+
+The installed default grayscale action timed out on a synthetic document, after which Photoshop rejected read-only COM calls as application_busy. No replay or blind recovery was performed. A user-facing recovery request is pending because the official Computer Use runtime still fails during kernel asset creation. Real UXP, native Codex tool entrypoints and the uninterrupted 60-minute Photoshop soak remain incomplete.
+
+168 automated tests passed three rounds; TypeScript, lint, prompt coverage and pack checks passed. The three private original source hashes remained unchanged. Additional real runners cover exports, styles, guards, dataset rejection, LUT refusal, recipe layers, organization, stacks, remaining content tools, sky blending, recipe exports, batch recipes, enhancement and actions. The action runner is currently a reproducer of an unresolved timeout; `lut_cases.py --expect-refusal` only verifies failure containment.
+
+The full CMYK/16-bit matrix, all gradient angles, textured frequency separation, batch output publication under disk/write faults, real portrait quality and remaining plugin/API blockers still require acceptance. Do not treat scoped happy-path passes as a complete release gate.
+
+## Earlier checkpoint
+
 ## Changes
 
 - Artboard crop, image resize, merge-visible and flatten create a unique PSB recovery copy, reopen it, compare geometry and layer/text structure, and only then execute the edit. The tool response includes the verified backup path. `PHOTOSHOP_RECOVERY_DIR` selects the local backup directory.

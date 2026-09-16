@@ -32,7 +32,7 @@ export function bindOrganizeLayers(connection: PhotoshopConnection): ToolDefinit
           },
           auto_group: {
             type: 'boolean',
-            description: 'Group layers by kind (text / image / shape / adjustment). Default true.',
+            description: 'Group adjacent layers of the same kind while preserving stacking order. Clipped or locked layers are refused. Default true.',
             default: true,
           },
         },
@@ -56,12 +56,16 @@ async function runOrganizeLayers(
     }
 
     var allLayers = [];
+    var originalIndices = [];
     for (var i = 0; i < doc.layers.length; i++) {
       var l = doc.layers[i];
       try {
         if (l.typename === 'LayerSet') continue;
       } catch (eType) {}
+      if (${autoGroup ? 'true' : 'false'} && (l.grouped || l.allLocked))
+        throw new Error('unsupported: auto-grouping clipped or locked layers is not certified; use auto_group=false');
       allLayers.push(l);
+      originalIndices.push(i);
     }
 
     function kindGroupName(layer) {
@@ -128,19 +132,23 @@ async function runOrganizeLayers(
 
     var groupCount = 0;
     if (${autoGroup ? 'true' : 'false'}) {
-      var groupCache = {};
+      var currentGroup = null, previousKind = '', previousIndex = -1;
       for (var k = allLayers.length - 1; k >= 0; k--) {
         var lk = allLayers[k];
+        if (lk.isBackgroundLayer) { currentGroup = null; continue; }
         var gName = kindGroupName(lk);
-        if (!groupCache[gName]) {
+        // Group only contiguous runs. Combining separated kinds reorders pixels
+        // (for example Image / Text / Image), even when no layer is deleted.
+        if (!currentGroup || gName !== previousKind || originalIndices[k] + 1 !== previousIndex) {
           var grp = doc.layerSets.add();
           grp.name = gName;
-          groupCache[gName] = grp;
+          grp.move(lk, ElementPlacement.PLACEBEFORE);
+          currentGroup = grp;
           groupCount += 1;
         }
-        try {
-          lk.move(groupCache[gName], ElementPlacement.INSIDE);
-        } catch (eMove) {}
+        lk.move(currentGroup, ElementPlacement.INSIDE);
+        previousKind = gName;
+        previousIndex = originalIndices[k];
       }
     }
 

@@ -82,6 +82,7 @@ async function imageStack(
     return atomicSuccess(`Image stack applied (${mode}, ${files.length} files)`, {
       mode,
       file_count: files.length,
+      document_id: parsed.document_id,
       layer_name: parsed.layer_name,
     });
   } catch (error) {
