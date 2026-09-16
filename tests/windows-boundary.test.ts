@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { WindowsExecutor } from '../src/platform/windows-executor.js';
+import { WindowsExecutor, AdobeDispatchRejectedError, isComDispatchRejection } from '../src/platform/windows-executor.js';
 import { access, clearQuarantine, assertSafe } from '../src/platform/operation-safety.js';
 import { parseExtendScriptPayload } from '../src/utils/extendscript-result.js';
 
@@ -13,6 +13,7 @@ class FakeAdobe extends WindowsExecutor {
     this.calls.push(script);
     if (script === 'slow') await delay(180);
     if (script === 'partial-error') throw new Error('changed a layer, then failed');
+    if (script === 'com-rejected') throw new AdobeDispatchRejectedError();
     return script;
   }
 }
@@ -27,6 +28,21 @@ afterEach(async () => {
 });
 
 describe('Windows Adobe dispatch boundaries', () => {
+  it('does not quarantine a transport-proven COM rejection or silently retry it', async () => {
+    const adobe = new FakeAdobe();
+    await expect(adobe.execute('com-rejected')).rejects.toThrow('application_busy');
+    expect(adobe.calls).toEqual(['com-rejected']);
+    await expect(assertSafe()).resolves.toBeUndefined();
+    expect(await adobe.execute('next')).toBe('next');
+  });
+  it('requires both the transport exit code and the specific COM HRESULT', () => {
+    const message = 'ERROR: COM -2147417846 (): ';
+    expect(isComDispatchRejection({ code: 1 }, message)).toBe(true);
+    expect(isComDispatchRejection({ code: 0 }, message)).toBe(false);
+    expect(isComDispatchRejection({ code: 1 }, 'ERROR: COM -2147467259 (): ')).toBe(false);
+    expect(isComDispatchRejection({ code: 'ENOENT' }, message)).toBe(false);
+    expect(isComDispatchRejection(null, message)).toBe(false);
+  });
   it('fails closed even if an interrupted quarantine write left an empty marker', async () => {
     await writeFile(join(directory, 'uncertain.json'), '');
     await expect(assertSafe()).rejects.toThrow('outcome_unknown');

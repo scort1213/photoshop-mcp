@@ -19,6 +19,7 @@ def main(target, seconds, allowed):
     started = time.monotonic()
     status = dict(app='ps', mode='authorized_coexistence', complete=False,
                   cycles=0, reconnects=0, preview_successes=0,
+                  concurrent_metadata_changes=0,
                   target=target, allowed_other_ids=sorted(allowed) if allowed is not None else 'authorized changing work')
     output = ROOT/'ps-soak-status.json'
     if output.exists():
@@ -47,7 +48,15 @@ def main(target, seconds, allowed):
             c.call('photoshop_set_active_document', {'document_id': previous})
         before_other = [signature(r) for r in before if r['id'] != target]
         after_other = [signature(r) for r in after if r['id'] != target]
-        assert before_other == after_other, 'other document changed during call; stop for attribution'
+        if before_other != after_other:
+            event = dict(at=time.time(),tool=name,before=before_other,after=after_other)
+            with (ROOT/'ps-coexist-concurrent-changes.jsonl').open('a',encoding='utf-8') as stream:
+                stream.write(json.dumps(event,ensure_ascii=False)+'\n')
+            status['concurrent_metadata_changes'] += 1
+            if allowed is not None:
+                raise AssertionError('other document changed during call; stop for attribution')
+            # Explicit '*' authorization permits changing work documents. This
+            # is observation only, never a claim that foreign pixels are intact.
         if name == 'photoshop_execute_script' and isinstance(result, str) and '\nResult: ' in result:
             result = json.loads(result.split('\nResult: ', 1)[1])
         return result
@@ -64,7 +73,8 @@ def main(target, seconds, allowed):
                 'var d=app.activeDocument;d.layers[0].name='+json.dumps(value)+
                 ';return {id:d.id,name:d.layers[0].name};'})
             assert result['id'] == target and result['name'] == value, result
-            call('photoshop_get_state', {})
+            inspected = call('photoshop_get_state', {})
+            assert inspected['document']['id'] == target, inspected
             if count % 12 == 0:
                 call('photoshop_get_preview', {'max_dimension_px':480})
                 status['preview_successes'] += 1

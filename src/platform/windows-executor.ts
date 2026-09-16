@@ -12,6 +12,19 @@ import { ScriptExecutor } from './script-executor.js';
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
+export class AdobeDispatchRejectedError extends Error {
+  constructor() {
+    super('application_busy: Photoshop rejected the COM request before execution (RPC_E_SERVERCALL_RETRYLATER); no automatic retry was performed');
+  }
+}
+
+export function isComDispatchRejection(error: unknown, output: string): boolean {
+  // Only the VBS transport exit proves rejection. A script body returning an
+  // error string with the same number must still be treated as partial failure.
+  return !!error && typeof error === 'object' && 'code' in error && error.code === 1 &&
+    /^ERROR: COM -2147417846 \([^\r\n]*\):/.test(output.trim());
+}
+
 export class WindowsExecutor implements ScriptExecutor {
   private logger: Logger;
   private scriptQueue: Array<() => Promise<unknown>> = [];
@@ -55,7 +68,12 @@ export class WindowsExecutor implements ScriptExecutor {
           result = await this.executeScript(script, lease.child);
           clearTimeout(timeoutId);
           if (!expired && mode === 'write') await clearQuarantine();
-        } catch (error) { failure = error; }
+        } catch (error) {
+          failure = error;
+          if (error instanceof AdobeDispatchRejectedError && !expired && mode === 'write') {
+            await clearQuarantine();
+          }
+        }
         finally {
           clearTimeout(timeoutId);
           await timeoutWork;
@@ -119,6 +137,7 @@ export class WindowsExecutor implements ScriptExecutor {
           if (executionError) throw executionError;
         } catch (error) {
           const details = await readFile(resultPath, 'utf16le').catch(() => '');
+          if (isComDispatchRejection(error, details)) throw new AdobeDispatchRejectedError();
           if (details) this.parseResult(details);
           throw error;
         }

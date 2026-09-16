@@ -111,7 +111,10 @@ Use `'*'` only when the authorization also covers changing work documents.
 The target must already be open inside the run directory. Every edit, preview,
 and save pins that ID; only the test output path is written. After a successful
 call the previous tab is restored if the active tab is still the test target.
-Changes in other documents' metadata during a call stop the run for attribution.
+Changes in other documents' metadata during a call are logged and stop the run
+for attribution in the fixed-ID mode. With explicit `'*'` authorization they are
+recorded as concurrent activity and do not stop the targeted-operation soak;
+foreign-document integrity is then explicitly outside the pass assertion.
 No documents are closed and no Adobe processes are stopped. The ordinary
 fault/lifecycle guard remains strict and does not inherit this exception.
 

@@ -24,6 +24,7 @@ export type PhotoshopErrorCode =
   | 'not_clipping'
   | 'outcome_unknown'
   | 'queue_timeout'
+  | 'application_busy'
   | 'ambiguous_document'
   | 'unknown';
 
@@ -43,6 +44,7 @@ const ERROR_PATTERNS: Array<{
   { pattern: /ambiguous_name/i, code: 'ambiguous_name', suggested_next_tool: 'photoshop_get_layers' },
   { pattern: /outcome_unknown/i, code: 'outcome_unknown', suggested_next_tool: 'photoshop_get_state' },
   { pattern: /queue_timeout/i, code: 'queue_timeout' },
+  { pattern: /application_busy/i, code: 'application_busy', suggested_next_tool: 'photoshop_get_state' },
   { pattern: /ambiguous_document/i, code: 'ambiguous_document', suggested_next_tool: 'photoshop_list_documents' },
   { pattern: /invalid_argument/i, code: 'invalid_arguments' },
   { pattern: /document_not_found/i, code: 'document_not_found', suggested_next_tool: 'photoshop_list_documents' },
