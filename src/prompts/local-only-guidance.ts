@@ -1,6 +1,14 @@
 /** Guidance for trusted custom scripts and actions; this is not a sandbox. */
 export const LOCAL_ONLY_GUIDANCE = `Local operation policy
 - Use only local Photoshop editing and files already available on this computer.
+- Fixed-tool paths must be native absolute paths to real local files, including
+  image references in XML/CSV. Do not use relative paths, ~, Finder aliases,
+  shortcuts, network volumes or encoded URI input. Literal percent signs in
+  native filenames are supported; the server handles Adobe path encoding.
+- photoshop_close_document with save:true saves a local copy and keeps the
+  document open (saved:true, closed:false). Tell the user it remains open.
+  Do not automatically follow this with save:false or custom close code;
+  closing/discarding requires the user's separate decision.
 - Do not call Firefly, generative features, Neural Filters, cloud document or
   Creative Cloud Libraries operations, online asset downloads, or online font activation.
 - Do not sign in, validate accounts or API keys, open login pages or browsers,

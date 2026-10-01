@@ -1,5 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import { runInNewContext } from 'node:vm';
+// Test the JSX transport independently of host OS path checks (covered in local-path tests).
+vi.mock('../src/utils/local-path.js', () => ({ toAdobePath: (path: string) => path }));
 import { ExtendScriptSnippets } from '../src/api/extendscript.js';
 
 it('keeps multiple Unicode Windows paths flat and intact before opening', () => {

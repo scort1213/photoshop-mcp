@@ -1,8 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { isAbsolute, join, normalize, relative, resolve } from 'node:path';
-import { assertLocalPath } from '../utils/local-path.js';
+import { join, posix, win32 } from 'node:path';
+import { getLocalMcpHome, resolveLocalPath } from '../utils/local-path.js';
 
 const EXPORTS_SUBDIR = 'exports';
 
@@ -18,38 +17,28 @@ export function sanitizeExportChatSegment(raw: string | undefined | null): strin
 }
 
 export function getPhotoshopMcpHomeDir(): string {
-  const env = process.env.PHOTOSHOP_MCP_HOME?.trim();
-  if (env) { assertLocalPath(env); return env; }
-  return join(homedir(), '.photoshop-mcp');
+  return getLocalMcpHome();
 }
 
 export function getPhotoshopExportsDir(): string {
-  const dir = join(getPhotoshopMcpHomeDir(), EXPORTS_SUBDIR);
-  assertLocalPath(dir);
+  const dir = resolveLocalPath(join(getPhotoshopMcpHomeDir(), EXPORTS_SUBDIR));
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  return dir;
+  return resolveLocalPath(dir);
 }
 
 export function getPhotoshopExportsWorkingDir(): string {
   const root = getPhotoshopExportsDir();
   const seg = sanitizeExportChatSegment(process.env[PHOTOSHOP_EXPORT_CHAT_ID_ENV]);
   if (!seg) return root;
-  const dir = join(root, seg);
-  assertLocalPath(dir);
+  const dir = resolveLocalPath(join(root, seg));
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  return dir;
+  return resolveLocalPath(dir);
 }
 
 function normalizeExt(ext: string): string {
   const e = ext.replace(/^\.+/, '').toLowerCase();
+  if (e && !/^[a-z0-9]+$/.test(e)) throw new Error('invalid_arguments: invalid export extension');
   return e || 'bin';
-}
-
-function assertResolvedUnderExports(exportsDir: string, resolved: string): void {
-  const rel = relative(exportsDir, resolved);
-  if (!rel || rel.startsWith('..') || isAbsolute(rel)) {
-    throw new Error('Resolved path escapes Photoshop MCP exports directory');
-  }
 }
 
 /**
@@ -57,21 +46,16 @@ function assertResolvedUnderExports(exportsDir: string, resolved: string): void 
  * ~/.photoshop-mcp/exports (or ~/.photoshop-mcp/exports/<chatId> in UI mode).
  */
 export function resolveExportPath(userPath: string | undefined, ext: string): string {
-  if (userPath?.trim()) assertLocalPath(userPath);
-  const exportsDir = getPhotoshopExportsWorkingDir();
-  const dotExt = `.${normalizeExt(ext)}`;
+  if (userPath?.trim()) return resolveLocalPath(userPath);
+  const base = `photoshop-export-${Date.now()}-${randomBytes(4).toString('hex')}.${normalizeExt(ext)}`;
+  return resolveGeneratedExportPath(base, ext);
+}
 
-  const trimmed = userPath?.trim();
-  if (!trimmed) {
-    const base = `photoshop-export-${Date.now()}-${randomBytes(4).toString('hex')}${dotExt}`;
-    return join(exportsDir, base);
-  }
-
-  if (isAbsolute(trimmed)) {
-    return normalize(trimmed);
-  }
-
-  const resolved = resolve(exportsDir, trimmed);
-  assertResolvedUnderExports(exportsDir, resolved);
-  return resolved;
+/** Internal recipe filenames only; explicit user paths use resolveExportPath. */
+export function resolveGeneratedExportPath(name: string, ext: string): string {
+  normalizeExt(ext);
+  // eslint-disable-next-line no-control-regex -- Internal filenames must remain one native filename.
+  if (!name || name === '.' || name === '..' || posix.basename(name) !== name || win32.basename(name) !== name || /[\x00-\x1f]/.test(name))
+    throw new Error('invalid_arguments: generated export name must be one filename');
+  return resolveLocalPath(join(getPhotoshopExportsWorkingDir(), name));
 }

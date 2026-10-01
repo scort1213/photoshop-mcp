@@ -1,7 +1,7 @@
 import { beforeAll, afterAll, expect, it, vi } from 'vitest';
 
 // Keep dispatch deadlines independent of mount-command I/O; local-path.test.ts covers path policy.
-vi.mock('../src/utils/local-path.js', () => ({ assertLocalPath: () => undefined }));
+vi.mock('../src/utils/local-path.js', () => ({ assertLocalPath: () => undefined, resolveLocalPath: (path: string) => path }));
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

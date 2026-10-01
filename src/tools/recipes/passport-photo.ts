@@ -1,8 +1,9 @@
+import { toAdobePath } from '../../utils/local-path.js';
 import { ToolDefinition, ToolResult } from '../../core/tool-registry.js';
-import { resolveExportPath } from '../../lib/export-paths.js';
+import { resolveGeneratedExportPath } from '../../lib/export-paths.js';
 import { PhotoshopConnection } from '../../platform/connection.js';
 import { PhotoshopDetector } from '../../platform/detector.js';
-import { clampInt, executeStandaloneRecipe, jsString, toolFailure } from './_shared.js';
+import { clampInt, executeStandaloneRecipe, jsStringLiteral, toolFailure } from './_shared.js';
 
 const TOOL_NAME = 'photoshop_recipe_passport_photo';
 
@@ -91,9 +92,9 @@ async function runPassportPhoto(
     }
   }
 
-  const photoPath = resolveExportPath(`passport-${spec.slug}-${Date.now()}.jpg`, 'jpg');
+  const photoPath = resolveGeneratedExportPath(`passport-${spec.slug}-${Date.now()}.jpg`, 'jpg');
   const sheetPath = makeSheet
-    ? resolveExportPath(`passport-${spec.slug}-sheet-${Date.now()}.jpg`, 'jpg')
+    ? resolveGeneratedExportPath(`passport-${spec.slug}-sheet-${Date.now()}.jpg`, 'jpg')
     : '';
 
   const body = `
@@ -170,7 +171,7 @@ async function runPassportPhoto(
         ResampleMethod.BICUBIC
       );
 
-      var photoFile = new File("${jsString(photoPath)}");
+      var photoFile = new File(${jsStringLiteral(toAdobePath(photoPath))});
       var jpegOptions = new JPEGSaveOptions();
       jpegOptions.quality = ${quality};
       jpegOptions.embedColorProfile = true;
@@ -204,7 +205,7 @@ async function runPassportPhoto(
             sheetCopies++;
           }
         }
-        var sheetFile = new File("${jsString(sheetPath)}");
+        var sheetFile = new File(${jsStringLiteral(toAdobePath(sheetPath))});
         sheet.saveAs(sheetFile, jpegOptions, true);
         sheet.close(SaveOptions.DONOTSAVECHANGES);
         sheet = null;

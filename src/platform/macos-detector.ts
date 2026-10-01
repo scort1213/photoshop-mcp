@@ -1,10 +1,11 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { access, constants, readFile } from 'fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { access, constants, readFile } from 'node:fs/promises';
 import { Logger } from '../utils/logger.js';
 import { PhotoshopInfo } from './connection.js';
+import { resolveLocalPath } from '../utils/local-path.js';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export class MacOSDetector {
   private logger: Logger;
@@ -20,7 +21,7 @@ export class MacOSDetector {
     const envPath = process.env.PHOTOSHOP_PATH;
     if (envPath) {
       this.logger.debug(`Using environment variable: ${envPath}`);
-      const info = await this.checkPath(envPath);
+      const info = await this.checkPath(resolveLocalPath(envPath));
       if (info) return info;
     }
 
@@ -44,10 +45,9 @@ export class MacOSDetector {
 
   private async detectUsingSpotlight(): Promise<PhotoshopInfo | null> {
     try {
-      // Use mdfind to search for Photoshop applications
-      const { stdout } = await execAsync(
-        'mdfind "kMDItemCFBundleIdentifier == com.adobe.Photoshop"'
-      );
+      // Search only a checked local installation root; custom locations use PHOTOSHOP_PATH.
+      const applicationsRoot = resolveLocalPath('/Applications');
+      const { stdout } = await execFileAsync('/usr/bin/mdfind', ['-onlyin', applicationsRoot, 'kMDItemCFBundleIdentifier == com.adobe.Photoshop'], { timeout: 5000 });
 
       const apps = stdout
         .split('\n')
@@ -95,7 +95,7 @@ export class MacOSDetector {
   private async checkPath(path: string): Promise<PhotoshopInfo | null> {
     try {
       // Clean up path
-      const cleanPath = path.trim();
+      const cleanPath = resolveLocalPath(path);
 
       // Check if path exists
       await access(cleanPath, constants.F_OK);
@@ -122,22 +122,20 @@ export class MacOSDetector {
   private async extractVersionFromApp(appPath: string): Promise<string> {
     try {
       // Try to read version from Info.plist
-      const plistPath = `${appPath}/Contents/Info.plist`;
+      const plistPath = resolveLocalPath(`${appPath}/Contents/Info.plist`);
       
       try {
         await access(plistPath, constants.F_OK);
         
         // Use PlistBuddy to extract version
-        const { stdout: version } = await execAsync(
-          `/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${plistPath}"`
-        );
+        const { stdout: version } = await execFileAsync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', plistPath], { timeout: 5000 });
         
         if (version.trim()) {
           return version.trim();
         }
       } catch {
         // PlistBuddy failed, try parsing manually
-        const content = await readFile(plistPath, 'utf8');
+        const content = await readFile(resolveLocalPath(plistPath), 'utf8');
         const versionMatch = content.match(
           /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/
         );
@@ -165,7 +163,8 @@ export class MacOSDetector {
       const appName = appPath.split('/').pop()?.replace('.app', '') || 'Adobe Photoshop';
 
       // Use pgrep to check if process is running
-      const { stdout } = await execAsync(`pgrep -f "${appName}"`);
+      const pattern = appName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const { stdout } = await execFileAsync('/usr/bin/pgrep', ['-f', pattern], { timeout: 5000 });
       return stdout.trim().length > 0;
     } catch {
       // pgrep returns non-zero exit code if no process found
@@ -175,10 +174,8 @@ export class MacOSDetector {
 
   async getAppBundleId(appPath: string): Promise<string | null> {
     try {
-      const plistPath = `${appPath}/Contents/Info.plist`;
-      const { stdout } = await execAsync(
-        `/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "${plistPath}"`
-      );
+      const plistPath = resolveLocalPath(`${appPath}/Contents/Info.plist`);
+      const { stdout } = await execFileAsync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIdentifier', plistPath], { timeout: 5000 });
       return stdout.trim();
     } catch {
       return null;

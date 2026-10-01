@@ -9,7 +9,11 @@ This fork controls local Photoshop through MCP stdio. Install dependencies expli
 - Firefly generation, generative fill/remove/expand/upscale, Neural Filters and the native-sky tool are not advertised. Direct requests fail with `cloud_disabled` before an Adobe operation.
 - Distraction removal uses content-aware fill immediately. Portrait enhancement uses ordinary local retouching. Sky blending uses an existing local image and a gradient mask.
 - Explicit requests for the removed cloud/native branches fail rather than silently attempting them.
-- Fixed file tools require local file destinations and inputs; URLs and network volumes are rejected. Save-on-close uses a verified local destination instead of an unqualified cloud-document save. It reuses existing PSD/PSB/JPEG/PNG/TIFF filenames; otherwise provide a supported local destination. A save or validation failure leaves the document open.
+- Fixed file tools require native absolute paths, including image references inside XML/CSV. URLs, relative paths, `~`, network/unknown mounts, Finder aliases, Windows shortcuts and Adobe volume-name ambiguities are rejected before accessing their targets. Valid local symlinks are resolved first; literal percent signs, spaces, quotes and Unicode names are encoded once for Adobe.
+- `photoshop_close_document(save:true)` saves a verified local copy and **keeps the document open**, returning `saved:true, closed:false` with its path and document ID. It reuses existing PSD/PSB/JPEG/PNG/TIFF filenames; otherwise provide a supported local destination. Failures also leave the document open. Do not automatically follow with `save:false` or custom close code; the user decides when to close/discard.
+- Both platforms serialize calls across MCP clients. Save operations hold one lease through target selection, Adobe save, file verification and publication. A timed-out write blocks subsequent writes until explicit state inspection and recovery; no automatic retry or uncertain-file cleanup occurs.
+- Scripts, previews and CSV/XML staging use unique directories under the verified local MCP home. Preview reads/cleanup use the server's allocated path, never an arbitrary path returned by Adobe. Unsafe configuration fails before discovery or file creation; runtime does not consult Adobe `Folder.temp`.
+- Historical live-cloud probe commands are removed. Cloud tests assert refusal instead of attempting a cloud feature.
 
 ## Preserved flexibility and its limit
 
@@ -51,3 +55,13 @@ Check both Windows and macOS independently:
 5. Record automated tests, real-application checks and client checks separately. Never claim a platform passed without its actual result.
 
 See [acceptance evidence](LOCAL_ONLY_ACCEPTANCE.md) for the current verification status.
+
+## Path configuration
+
+The default home is the user's local `.photoshop-mcp` directory. `PHOTOSHOP_MCP_HOME`, `PHOTOSHOP_SAFETY_DIR`, `PHOTOSHOP_RECOVERY_DIR` and `PHOTOSHOP_PATH` overrides must be unambiguous native absolute local paths. Internal temporary files do not use `TMPDIR`, `TEMP` or `TMP`. Every new job rechecks its roots.
+
+On Windows, the current fail-closed system-tool bootstrap requires Node and the real `SystemRoot` on the same drive; a different drive or linked system directory produces a configuration error without a PATH/network fallback. Windows real-app acceptance is recorded separately.
+
+On macOS, automatic installation discovery is restricted to the verified local `/Applications` directory. For a different local installation, set `PHOTOSHOP_PATH` explicitly.
+
+When upgrading from a build that used the system temporary directory for its safety files, let all outstanding operations finish, inspect Photoshop state, and stop/reload **every MCP client together**. Old and new clients must not run concurrently with different lock roots. Old quarantine files are not automatically cleared or migrated; resolve any uncertain operation before changing the root. The local launcher continues to point to this checkout's `dist/index.js`.

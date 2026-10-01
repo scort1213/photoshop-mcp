@@ -1,14 +1,15 @@
+import { toAdobePath, resolveLocalPath } from '../../utils/local-path.js';
 import { assertLocalPaths } from '../../utils/local-path.js';
 import { readdir, stat } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { extname, isAbsolute, join } from 'node:path';
 import { ToolDefinition, ToolResult } from '../../core/tool-registry.js';
-import { resolveExportPath } from '../../lib/export-paths.js';
+import { resolveGeneratedExportPath } from '../../lib/export-paths.js';
 import { PhotoshopConnection } from '../../platform/connection.js';
 import {
   clampInt,
   executeRecipe,
-  jsString,
+  jsStringLiteral,
   RECIPE_ACTION_HELPERS,
   toolFailure,
 } from './_shared.js';
@@ -75,7 +76,7 @@ async function runBatchMockupReplace(
 ): Promise<ToolResult> {
   const layerName =
     typeof args.smart_object_layer_name === 'string' ? args.smart_object_layer_name.trim() : '';
-  const assetsDir = typeof args.assets_dir === 'string' ? args.assets_dir.trim() : '';
+  let assetsDir = typeof args.assets_dir === 'string' ? args.assets_dir : '';
   const quality = clampInt(args.quality, 1, 12, 10);
 
   if (!layerName) {
@@ -95,6 +96,7 @@ async function runBatchMockupReplace(
 
   let entries: string[];
   try {
+    assetsDir = resolveLocalPath(assetsDir);
     const dirStat = await stat(assetsDir);
     if (!dirStat.isDirectory()) {
       return toolFailure({
@@ -130,8 +132,8 @@ async function runBatchMockupReplace(
   const variantsLiteral = assets
     .map((assetPath, index) => {
       const baseName = baseNameWithoutExt(assetPath);
-      const outPath = resolveExportPath(`mockup-${baseName}-${Date.now()}-${randomBytes(4).toString('hex')}-${index}.jpg`, 'jpg');
-      return `{ asset: "${jsString(assetPath)}", base: "${jsString(baseName)}", out: "${jsString(outPath)}" }`;
+      const outPath = resolveGeneratedExportPath(`mockup-${baseName}-${Date.now()}-${randomBytes(4).toString('hex')}-${index}.jpg`, 'jpg');
+      return `{ asset: ${jsStringLiteral(toAdobePath(assetPath))}, base: ${jsStringLiteral(baseName)}, out: ${jsStringLiteral(toAdobePath(outPath))} }`;
     })
     .join(', ');
 
@@ -140,7 +142,7 @@ async function runBatchMockupReplace(
     ${MCP_SMART_OBJECT_HELPERS}
 
     var doc = app.activeDocument;
-    var targetName = "${jsString(layerName)}";
+    var targetName = ${jsStringLiteral(layerName)};
     var target = null;
     target = __mcp_findLayer(doc, targetName);
     if (!target) {

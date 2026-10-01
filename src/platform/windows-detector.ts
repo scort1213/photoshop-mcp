@@ -1,10 +1,12 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { access, constants } from 'fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { access, constants } from 'node:fs/promises';
 import { Logger } from '../utils/logger.js';
 import { PhotoshopInfo } from './connection.js';
+import { resolveLocalPath } from '../utils/local-path.js';
+import { getWindowsSystemTool } from '../utils/system-tools.js';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 interface RegistryEntry {
   version: string;
@@ -25,7 +27,7 @@ export class WindowsDetector {
     const envPath = process.env.PHOTOSHOP_PATH;
     if (envPath) {
       this.logger.debug(`Using environment variable: ${envPath}`);
-      const info = await this.checkPath(envPath);
+      const info = await this.checkPath(resolveLocalPath(envPath));
       if (info) return info;
     }
 
@@ -57,7 +59,7 @@ export class WindowsDetector {
 
       for (const regPath of registryPaths) {
         try {
-          const { stdout } = await execAsync(`reg query "${regPath}" /s`);
+          const { stdout } = await execFileAsync(getWindowsSystemTool('reg'), ['query', regPath, '/s'], { windowsHide: true, timeout: 5000 });
           const entries = this.parseRegistryOutput(stdout);
           
           if (entries.length > 0) {
@@ -80,7 +82,7 @@ export class WindowsDetector {
 
       for (const clsidPath of clsidPaths) {
         try {
-          const { stdout } = await execAsync(`reg query "${clsidPath}" /ve`);
+          const { stdout } = await execFileAsync(getWindowsSystemTool('reg'), ['query', clsidPath, '/ve'], { windowsHide: true, timeout: 5000 });
           const exePath = this.extractPathFromCLSID(stdout);
           if (exePath) {
             const info = await this.checkPath(exePath);
@@ -132,8 +134,8 @@ export class WindowsDetector {
   }
 
   private getCommonPaths(): string[] {
-    const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
-    const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+    const programFiles = resolveLocalPath(process.env.ProgramFiles || 'C:\\Program Files');
+    const programFilesX86 = resolveLocalPath(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)');
 
     const paths: string[] = [];
     
@@ -165,7 +167,7 @@ export class WindowsDetector {
       if (!cleanPath.toLowerCase().endsWith('.exe')) {
         cleanPath = `${cleanPath}\\Photoshop.exe`;
       }
-
+      cleanPath = resolveLocalPath(cleanPath);
       await access(cleanPath, constants.F_OK);
       
       const version = this.extractVersionFromPath(cleanPath);
@@ -200,7 +202,7 @@ export class WindowsDetector {
 
   private async checkIfRunning(): Promise<boolean> {
     try {
-      const { stdout } = await execAsync('tasklist /FI "IMAGENAME eq Photoshop.exe"');
+      const { stdout } = await execFileAsync(getWindowsSystemTool('tasklist'), ['/FI', 'IMAGENAME eq Photoshop.exe'], { windowsHide: true, timeout: 5000 });
       return stdout.toLowerCase().includes('photoshop.exe');
     } catch {
       return false;

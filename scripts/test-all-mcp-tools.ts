@@ -4,7 +4,8 @@
  */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+import { CLOUD_DISABLED_TOOLS } from '../src/core/local-policy.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -60,7 +61,7 @@ class ToolTestRunner {
   async run(
     name: string,
     args: Record<string, unknown> = {},
-    opts: { required?: boolean; skip?: string; expectError?: boolean } = {}
+    opts: { required?: boolean; skip?: string; expectError?: boolean; expectedCode?: string } = {}
   ): Promise<boolean> {
     if (opts.skip) {
       this.record(name, 'skip', opts.skip, 0);
@@ -75,7 +76,7 @@ class ToolTestRunner {
       const body = textFrom(result);
 
       if (opts.expectError) {
-        if (result.isError) {
+        if (result.isError && (!opts.expectedCode || body.includes(opts.expectedCode))) {
           this.record(name, 'pass', short(body), ms);
           console.log(`  OK   ${name} (expected error, ${ms}ms) — ${short(body)}`);
           return true;
@@ -143,10 +144,8 @@ class ToolTestRunner {
 }
 
 function writeTestPng(path: string): void {
-  execSync(
-    `python3 -c "import struct,zlib,binascii; w=h=64; rows=b''.join(b'\\x00'+b'\\xff\\x00\\x00'*w for _ in range(h)); comp=zlib.compress(rows,9); crc=lambda t,d: struct.pack('>I',binascii.crc32(t+d)&0xffffffff); ch=lambda t,d: struct.pack('>I',len(d))+t+d+crc(t,d); png=b'\\x89PNG\\r\\n\\x1a\\n'+ch(b'IHDR',struct.pack('>IIBBBBB',w,h,8,2,0,0,0))+ch(b'IDAT',comp)+ch(b'IEND',b''); open('${path}','wb').write(png)"`,
-    { stdio: 'ignore' }
-  );
+  execFileSync('python3', ['-c',
+    "import sys,struct,zlib,binascii; w=h=64; rows=b''.join(b'\\x00'+b'\\xff\\x00\\x00'*w for _ in range(h)); comp=zlib.compress(rows,9); crc=lambda t,d: struct.pack('>I',binascii.crc32(t+d)&0xffffffff); ch=lambda t,d: struct.pack('>I',len(d))+t+d+crc(t,d); png=b'\\x89PNG\\r\\n\\x1a\\n'+ch(b'IHDR',struct.pack('>IIBBBBB',w,h,8,2,0,0,0))+ch(b'IDAT',comp)+ch(b'IEND',b''); open(sys.argv[1],'wb').write(png)", path], { stdio: 'ignore' });
 }
 
 async function main(): Promise<void> {
@@ -159,8 +158,8 @@ async function main(): Promise<void> {
   writeTestPng(join(assetsDir, 'asset-b.png'));
 
   const transport = new StdioClientTransport({
-    command: 'npx',
-    args: ['tsx', join(ROOT, 'src/index.ts')],
+    command: process.execPath,
+    args: [join(ROOT, 'dist/index.js')],
     env: {
       ...process.env,
       LOG_LEVEL: '0',
@@ -181,8 +180,8 @@ async function main(): Promise<void> {
   await t.run('photoshop_get_state');
 
   await t.run('photoshop_execute_script', {
-    code: `while (app.documents.length > 0) { app.activeDocument.close(SaveOptions.DONOTSAVECHANGES); } return { documentsClosed: true };`,
-  });
+    code: `if (app.documents.length > 0) throw new Error('Close your own documents before running this dedicated test'); return { emptySession: true };`,
+  }, { required: true });
 
   console.log('\n=== Phase 1: Document ===');
   await t.run('photoshop_create_document', { width: 800, height: 600 }, { required: true });
@@ -788,41 +787,22 @@ async function main(): Promise<void> {
     code: `var doc=app.activeDocument; var target=null; function findRaster(c){for(var i=0;i<c.layers.length;i++){var L=c.layers[i]; if(L.typename==='LayerSet'){var n=findRaster(L); if(n)return n;} else if(String(L.kind)==='LayerKind.NORMAL'&&!L.isBackgroundLayer){return L;}} return null;} target=findRaster(doc); if(!target) throw new Error('No raster layer'); doc.activeLayer=target; return {active:target.name,kind:String(target.kind)};`,
   });
   await t.run('photoshop_select_rectangle', { left: 80, top: 80, right: 200, bottom: 200 });
-  const recipeAiSmoke = process.env.PHOTOSHOP_AI_SMOKE === '1';
   await t.run('photoshop_recipe_remove_distraction', {
     feather_px: 1,
-    ...(recipeAiSmoke ? {} : { use_generative: false }),
+    use_generative: false,
   });
   await t.run('photoshop_undo', { steps: 1 });
   await t.run('photoshop_recipe_sky_blend', {
     sky_image_path: testPng,
     horizon_pct: 45,
-    ...(recipeAiSmoke ? {} : { use_native_sky: false }),
+    use_native_sky: false,
   });
   await t.run('photoshop_undo', { steps: 1 });
 
-  const generativeSkip =
-    process.env.PHOTOSHOP_AI_SMOKE === '1'
-      ? undefined
-      : 'set PHOTOSHOP_AI_SMOKE=1 for live generative credit tests';
-
-  console.log('\n=== Phase 14b: Generative & Neural AI ===');
-  await t.run('photoshop_select_rectangle', { left: 100, top: 100, right: 250, bottom: 250 });
-  await t.run('photoshop_generative_fill', { prompt: 'soft gradient' }, { skip: generativeSkip });
-  await t.run('photoshop_generative_remove', { feather_px: 0 }, { skip: generativeSkip });
-  await t.run('photoshop_generative_expand', { prompt: 'extend background', direction: 'all' }, {
-    skip: generativeSkip,
-  });
-  await t.run('photoshop_generative_upscale', { target_scale: 2 }, { skip: generativeSkip });
-  await t.run('photoshop_sky_replacement', { sky_image_path: testPng }, { skip: generativeSkip });
-  await t.run('photoshop_generate_image', { prompt: 'abstract gradient', width: 512, height: 512 }, {
-    skip: generativeSkip,
-  });
-  await t.run(
-    'photoshop_neural_filter',
-    { filter: 'skin_smoothing', smoothness: 40, blur: 40 },
-    { skip: generativeSkip ?? 'requires UXP bridge plugin panel open' }
-  );
+  console.log('\n=== Phase 14b: Cloud requests must be refused ===');
+  for (const name of CLOUD_DISABLED_TOOLS) {
+    await t.run(name, {}, { expectError: true, expectedCode: 'cloud_disabled', required: true });
+  }
 
   console.log('\n=== Phase 15: State, preview, save ===');
   await t.run('photoshop_get_preview', { max_dimension_px: 512, quality: 7 });

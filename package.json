@@ -35,8 +35,6 @@
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
-    "spike:photoshop-actions": "tsx scripts/spike-photoshop-actions.ts",
-    "spike:2026": "tsx scripts/spike-2026-features.ts",
     "spike:issue-2": "tsx scripts/spike-issue-2.ts",
     "verify:photoshop-prompts": "tsx scripts/verify-photoshop-prompt-coverage.ts",
     "verify:pack": "node scripts/verify-pack.mjs",

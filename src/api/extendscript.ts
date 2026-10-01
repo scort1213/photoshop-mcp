@@ -3,7 +3,9 @@
  * ExtendScript is the legacy scripting API for Photoshop
  */
 
-import { jsString, jsStringLiteral } from '../utils/js-string.js';
+import { jsStringLiteral } from '../utils/js-string.js';
+import { join } from 'node:path';
+import { toAdobePath } from '../utils/local-path.js';
 import { gradientAngleCoordinates } from '../utils/gradient-angle.js';
 
 /** Avoid preference-driven substitutions while retaining the user's preference. */
@@ -549,7 +551,7 @@ export const ExtendScriptSnippets = {
     } else if (params.index !== undefined) {
       modeBlock = `var __mode = 'index'; var __targetIndex = ${params.index};`;
     } else {
-      modeBlock = `var __mode = 'name'; var __targetName = "${jsString(params.documentName!)}";`;
+      modeBlock = `var __mode = 'name'; var __targetName = ${jsStringLiteral(params.documentName!)};`;
     }
 
     return `
@@ -633,8 +635,8 @@ export const ExtendScriptSnippets = {
     var doc = app.activeDocument;
     var __psFont = null;
     ${fontName ? `
-    __psFont = resolveFontPostScriptName("${jsString(fontName)}");
-    if (!__psFont) throw new Error('font_not_found: ${jsString(fontName)}');
+    __psFont = resolveFontPostScriptName(${jsStringLiteral(fontName)});
+    if (!__psFont) throw new Error(${jsStringLiteral('font_not_found: ' + fontName)});
     ` : ''}
     // In artboard documents, a root-level layer cannot always become text.
     // Keep the new text in the active layer's group/artboard instead.
@@ -657,7 +659,7 @@ export const ExtendScriptSnippets = {
     var result = {
       created: true,
       layerName: textLayer.name,
-      text: "${jsString(text)}",
+      text: ${jsStringLiteral(text)},
       position: { x: ${x}, y: ${y} },
       fontSize: ${fontSize},
       ${fontName ? `font: textLayer.textItem.font,` : ''}
@@ -679,9 +681,9 @@ export const ExtendScriptSnippets = {
       throw new Error('No active document');
     }
     
-    var imageFile = new File("${jsString(filePath)}");
+    var imageFile = new File(${jsStringLiteral(toAdobePath(filePath))});
     if (!imageFile.exists) {
-      throw new Error('Image file not found: ${jsString(filePath)}');
+      throw new Error(${jsStringLiteral('Image file not found: ' + filePath)});
     }
 
     var targetX = ${x};
@@ -706,7 +708,7 @@ export const ExtendScriptSnippets = {
     
     var result = {
       placed: true,
-      filePath: "${jsString(filePath)}",
+      filePath: ${jsStringLiteral(filePath)},
       position: { x: targetX, y: targetY, semantics: 'absolute_top_left' },
       context: getContextInfo()
     };
@@ -729,9 +731,9 @@ export const ExtendScriptSnippets = {
    * Open an image file as a new document
    */
   openImage: (filePath: string) => `
-    var imageFile = new File("${jsString(filePath)}");
+    var imageFile = new File(${jsStringLiteral(toAdobePath(filePath))});
     if (!imageFile.exists) {
-      throw new Error('Image file not found: ${jsString(filePath)}');
+      throw new Error(${jsStringLiteral('Image file not found: ' + filePath)});
     }
     
     var doc = app.open(imageFile);
@@ -751,7 +753,7 @@ export const ExtendScriptSnippets = {
       throw new Error('No active document');
     }
     var doc = app.activeDocument;
-    var saveFile = new File(${jsStringLiteral(path)});
+    var saveFile = new File(${jsStringLiteral(toAdobePath(path))});
     var psdOptions = new PhotoshopSaveOptions();
     psdOptions.embedColorProfile = true;
     doc.saveAs(saveFile, psdOptions, true);
@@ -766,7 +768,7 @@ export const ExtendScriptSnippets = {
       throw new Error('No active document');
     }
     var doc = app.activeDocument;
-    var saveFile = new File(${jsStringLiteral(path)});
+    var saveFile = new File(${jsStringLiteral(toAdobePath(path))});
     var jpegOptions = new JPEGSaveOptions();
     jpegOptions.quality = ${quality};
     jpegOptions.embedColorProfile = true;
@@ -782,7 +784,7 @@ export const ExtendScriptSnippets = {
       throw new Error('No active document');
     }
     var doc = app.activeDocument;
-    var saveFile = new File(${jsStringLiteral(path)});
+    var saveFile = new File(${jsStringLiteral(toAdobePath(path))});
     var pngOptions = new PNGSaveOptions();
     pngOptions.compression = 9;
     doc.saveAs(saveFile, pngOptions, true);
@@ -791,14 +793,14 @@ export const ExtendScriptSnippets = {
 
   saveAsPSB: (path: string) => `
     if (app.documents.length === 0) throw new Error('No active document');
-    var file = new File(${jsStringLiteral(path)});
+    var file = new File(${jsStringLiteral(toAdobePath(path))});
     app.activeDocument.saveAs(file, new LargeDocumentFormatSaveOptions(), true);
     return { path: file.fsName };
   `,
 
   saveAsTIFF: (path: string) => `
     if (app.documents.length === 0) throw new Error('No active document');
-    var file = new File(${jsStringLiteral(path)});
+    var file = new File(${jsStringLiteral(toAdobePath(path))});
     var options = new TiffSaveOptions();
     options.layers = true;
     app.activeDocument.saveAs(file, options, true);
@@ -828,7 +830,7 @@ export const ExtendScriptSnippets = {
     }
     var doc = app.activeDocument;
     var layer = doc.artLayers.add();
-    ${name ? `layer.name = "${jsString(name)}";` : ''}
+    ${name ? `layer.name = ${jsStringLiteral(name)};` : ''}
     
     var result = { 
       created: true,
@@ -976,7 +978,7 @@ export const ExtendScriptSnippets = {
       throw new Error('No active document');
     }
     var doc = app.activeDocument;
-    var targetName = "${jsString(name)}";
+    var targetName = ${jsStringLiteral(name)};
     var target = null;
     target = __mcp_findLayer(doc, targetName);
     if (!target) {
@@ -1173,7 +1175,7 @@ export const ExtendScriptSnippets = {
     }
     var doc = app.activeDocument;
     var layer = doc.activeLayer;
-    var token = "${jsString(blendMode)}";
+    var token = ${jsStringLiteral(blendMode)};
     var applied = false;
     try {
       if (typeof BlendMode !== 'undefined' && BlendMode[token] !== undefined) {
@@ -1256,7 +1258,7 @@ export const ExtendScriptSnippets = {
     var layer = doc.activeLayer;
     
     var oldName = layer.name;
-    layer.name = "${jsString(newName)}";
+    layer.name = ${jsStringLiteral(newName)};
     
     return { 
       oldName: oldName,
@@ -1280,7 +1282,7 @@ export const ExtendScriptSnippets = {
     var layer = doc.activeLayer;
     
     var duplicated = layer.duplicate();
-    ${newName ? `duplicated.name = "${jsString(newName)}";` : ''}
+    ${newName ? `duplicated.name = ${jsStringLiteral(newName)};` : ''}
     doc.activeLayer = duplicated;
     
     var result = {
@@ -1774,9 +1776,9 @@ export const ExtendScriptSnippets = {
       throw new Error('Active layer is not a text layer');
     }
     
-    var __psFont = resolveFontPostScriptName("${jsString(fontName)}");
+    var __psFont = resolveFontPostScriptName(${jsStringLiteral(fontName)});
     if (!__psFont) {
-      throw new Error('font_not_found: ${jsString(fontName)}');
+      throw new Error(${jsStringLiteral('font_not_found: ' + fontName)});
     }
     layer.textItem.font = __psFont;
     ${fontSize ? `layer.textItem.size = ${fontSize};` : ''}
@@ -1791,7 +1793,7 @@ export const ExtendScriptSnippets = {
    * List installed fonts (PostScript names required for TextItem.font).
    */
   listFonts: (query?: string, limit = 200) => `
-    var query = ${query !== undefined ? `"${jsString(query)}"` : 'null'};
+    var query = ${query !== undefined ? `${jsStringLiteral(query)}` : 'null'};
     var limit = ${limit};
     var fonts = [];
     var total = app.fonts.length;
@@ -2371,7 +2373,7 @@ export const ExtendScriptSnippets = {
    */
   createClippingMask: (layerName?: string) => {
     const layerSelect = layerName
-      ? `var sel = __mcp_activateLayerByName("${jsString(layerName)}"); if (!sel.ok) return sel;`
+      ? `var sel = __mcp_activateLayerByName(${jsStringLiteral(layerName)}); if (!sel.ok) return sel;`
       : '';
     return `
     ${helperFunctions}
@@ -2434,7 +2436,7 @@ export const ExtendScriptSnippets = {
    */
   releaseClippingMask: (layerName?: string) => {
     const layerSelect = layerName
-      ? `var sel = __mcp_activateLayerByName("${jsString(layerName)}"); if (!sel.ok) return sel;`
+      ? `var sel = __mcp_activateLayerByName(${jsStringLiteral(layerName)}); if (!sel.ok) return sel;`
       : '';
     return `
     ${helperFunctions}
@@ -2512,7 +2514,7 @@ export const ExtendScriptSnippets = {
    * Play an action from Actions palette
    */
   playAction: (actionName: string, actionSetName: string) => `
-    app.doAction("${jsString(actionName)}", "${jsString(actionSetName)}");
+    app.doAction(${jsStringLiteral(actionName)}, ${jsStringLiteral(actionSetName)});
     
     return { 
       action: ${jsStringLiteral(actionName)},
@@ -2715,10 +2717,10 @@ export const ExtendScriptSnippets = {
     var doc = app.activeDocument;
     var activeLayer = doc.activeLayer;
     
-    var targetLayer = __mcp_findLayer(doc, "${jsString(targetLayerName)}");
+    var targetLayer = __mcp_findLayer(doc, ${jsStringLiteral(targetLayerName)});
 
     if (!targetLayer) {
-      throw new Error('Target layer not found: ${jsString(targetLayerName)}');
+      throw new Error(${jsStringLiteral('Target layer not found: ' + targetLayerName)});
     }
     
     // Determine ElementPlacement
@@ -2895,9 +2897,9 @@ export const ExtendScriptSnippets = {
   `,
 
   /**
-   * Export a JPEG preview to the system temp folder. Returns filesystem path for Node to read.
+   * Export a JPEG preview to the caller-owned, validated local destination.
    */
-  exportPreview: (maxDimension = 1024, jpegQuality = 8) => `
+  exportPreview: (outputPath: string, maxDimension = 1024, jpegQuality = 8) => `
     ${getContextInfo}
 
     if (app.documents.length === 0) {
@@ -2932,7 +2934,7 @@ export const ExtendScriptSnippets = {
       w = dup.width.as('px');
       h = dup.height.as('px');
       if (w > maxDim || h > maxDim) throw new Error('preview_size_mismatch');
-      tmpFile = new File(Folder.temp.fsName + '/ps-preview-' + (new Date().getTime()) + '-' + Math.floor(Math.random()*1000000000) + '.jpg');
+      tmpFile = new File(${jsStringLiteral(toAdobePath(outputPath))});
       var saveOptions = new JPEGSaveOptions();
       saveOptions.quality = ${jpegQuality};
       saveOptions.embedColorProfile = true;
@@ -2955,7 +2957,7 @@ export const ExtendScriptSnippets = {
 
   /**
    * Shared helpers for Firefly generative actions via Action Manager.
-   * See docs/plans/2026-07-03-1149-photoshop-ai-features/ and scripts/spike-photoshop-actions.ts.
+   * See docs/plans/2026-07-03-1149-photoshop-ai-features/.
    */
   generativeHelpers: () => `
     ${helperFunctions}
@@ -3365,7 +3367,7 @@ export const ExtendScriptSnippets = {
    * Color Lookup (3D LUT) adjustment layer — cinematic grades via built-in or file-based LUTs.
    */
   applyLut: (lut: string) => {
-    const escaped = jsString(lut);
+    const escaped = jsStringLiteral(toAdobePath(lut));
     return `
     ${helperFunctions}
 
@@ -3374,10 +3376,7 @@ export const ExtendScriptSnippets = {
     }
     app.displayDialogs = DialogModes.NO;
 
-    var lutFile = new File("${escaped}");
-    var lutInput = "${escaped}";
-    if (!lutFile.exists && lutInput.indexOf('/') < 0 && lutInput.indexOf('\\\\') < 0 && lutInput.indexOf(':') < 0)
-      lutFile = new File(app.path.fsName + '/Presets/3DLUTs/' + "${escaped}");
+    var lutFile = new File(${escaped});
     if (!lutFile.exists) throw new Error('file_not_found: LUT file not found');
     var lutExtension = lutFile.name.split('.').pop().toLowerCase();
     var lutFormats = { cube: 'LUTFormatCUBE', look: 'LUTFormatLOOK', '3dl': 'LUTFormat3DL' };
@@ -3417,7 +3416,7 @@ export const ExtendScriptSnippets = {
     return {
       created: true,
       layer_name: app.activeDocument.activeLayer.name,
-      lut: "${escaped}",
+      lut: ${escaped},
       lut_source: lutFile.exists ? 'file' : 'builtin'
     };
   `;
@@ -3611,16 +3610,16 @@ export const ExtendScriptSnippets = {
    * Import variables/data sets XML (Image > Variables > Data Sets > Import).
    */
   importDataSets: (xmlPath: string) => {
-    const escaped = jsString(xmlPath);
+    const escaped = jsStringLiteral(toAdobePath(xmlPath));
     return `
     if (app.documents.length === 0) {
       throw new Error('No active document');
     }
     if (typeof app.activeDocument.importVariables !== 'function' || typeof app.activeDocument.dataSets === 'undefined')
       throw new Error('unsupported: XML dataset import is unavailable in this Photoshop bridge; Photoshop UI imports CSV or tab-delimited data');
-    var xmlFile = new File("${escaped}");
+    var xmlFile = new File(${escaped});
     if (!xmlFile.exists) {
-      throw new Error('variables_xml_not_found: ${escaped}');
+      throw new Error(${jsStringLiteral('variables_xml_not_found: ' + xmlPath)});
     }
     var doc = app.activeDocument;
     doc.importVariables(xmlFile);
@@ -3632,7 +3631,7 @@ export const ExtendScriptSnippets = {
     } catch (e) {}
     return {
       imported: true,
-      xml_path: "${escaped}",
+      xml_path: ${escaped},
       count: names.length,
       datasets: names
     };
@@ -3643,8 +3642,10 @@ export const ExtendScriptSnippets = {
    * Batch-export one file per data set: applies each data set then saves a copy.
    */
   applyDataSetsExport: (outputDir: string, format: 'JPEG' | 'PNG' | 'PSD', datasetNames: string[]) => {
-    const escapedDir = jsString(outputDir);
-    const namesJson = JSON.stringify(datasetNames);
+    const escapedDir = jsStringLiteral(toAdobePath(outputDir));
+    const namesJson = "[" + datasetNames.map(jsStringLiteral).join(",") + "]";
+    const extension = format === 'JPEG' ? '.jpg' : '.' + format.toLowerCase();
+    const pathsJson = '[' + datasetNames.map(name => jsStringLiteral(toAdobePath(join(outputDir, name.replace(/[^a-zA-Z0-9_-]+/g, '_') + extension)))).join(',') + ']';
     return `
     ${helperFunctions}
 
@@ -3657,11 +3658,12 @@ export const ExtendScriptSnippets = {
     if (!doc.dataSets || doc.dataSets.length === 0) {
       throw new Error('no_datasets: active document has no data sets — import a variables XML first');
     }
-    var folder = new Folder("${escapedDir}");
+    var folder = new Folder(${escapedDir});
     if (!folder.exists && !folder.create()) {
-      throw new Error('output_dir_not_writable: ${escapedDir}');
+      throw new Error(${jsStringLiteral('output_dir_not_writable: ' + outputDir)});
     }
     var requested = ${namesJson};
+    var destinations = ${pathsJson};
     var outputs = [];
     var skipped = [];
     for (var n = 0; n < requested.length; n++) {
@@ -3673,26 +3675,26 @@ export const ExtendScriptSnippets = {
         continue;
       }
       doc.activeDataSet = set;
-      var base = "${escapedDir}/" + name.replace(/[^a-zA-Z0-9_\\-]+/g, '_');
+      var output = new File(destinations[n]);
       if ('${format}' === 'JPEG') {
         var jpg = new JPEGSaveOptions();
         jpg.quality = 10;
-        doc.saveAs(new File(base + '.jpg'), jpg, true, Extension.LOWERCASE);
-        outputs.push(base + '.jpg');
+        doc.saveAs(output, jpg, true, Extension.LOWERCASE);
+        outputs.push(output.fsName);
       } else if ('${format}' === 'PNG') {
         var png = new PNGSaveOptions();
-        doc.saveAs(new File(base + '.png'), png, true, Extension.LOWERCASE);
-        outputs.push(base + '.png');
+        doc.saveAs(output, png, true, Extension.LOWERCASE);
+        outputs.push(output.fsName);
       } else {
-        doc.saveAs(new File(base + '.psd'), new PhotoshopSaveOptions(), true, Extension.LOWERCASE);
-        outputs.push(base + '.psd');
+        doc.saveAs(output, new PhotoshopSaveOptions(), true, Extension.LOWERCASE);
+        outputs.push(output.fsName);
       }
     }
     return {
       exported: outputs.length,
       skipped: skipped,
       output_paths: outputs,
-      output_dir: "${escapedDir}",
+      output_dir: ${jsStringLiteral(outputDir)},
       format: '${format}'
     };
   `;
@@ -3703,7 +3705,7 @@ export const ExtendScriptSnippets = {
    */
   convertToSmartObject: (layerName?: string) => {
     const layerSelect = layerName
-      ? `var sel = __mcp_activateLayerByName("${jsString(layerName)}"); if (!sel.ok) return sel;`
+      ? `var sel = __mcp_activateLayerByName(${jsStringLiteral(layerName)}); if (!sel.ok) return sel;`
       : '';
     return `
     ${helperFunctions}
@@ -3756,7 +3758,7 @@ export const ExtendScriptSnippets = {
    */
   replaceSmartObjectContents: (filePath: string, layerName?: string) => {
     const layerSelect = layerName
-      ? `var sel = __mcp_activateLayerByName("${jsString(layerName)}"); if (!sel.ok) return sel;`
+      ? `var sel = __mcp_activateLayerByName(${jsStringLiteral(layerName)}); if (!sel.ok) return sel;`
       : '';
     return `
     ${helperFunctions}
@@ -3768,7 +3770,7 @@ export const ExtendScriptSnippets = {
     }
     app.displayDialogs = DialogModes.NO;
     ${layerSelect}
-    var rep = __mcp_replaceSmartObjectContents("${jsString(filePath)}");
+    var rep = __mcp_replaceSmartObjectContents(${jsStringLiteral(toAdobePath(filePath))});
     if (!rep.ok) return rep;
     return {
       ok: true,
@@ -3785,7 +3787,7 @@ export const ExtendScriptSnippets = {
    */
   editSmartObjectContents: (layerName?: string) => {
     const layerSelect = layerName
-      ? `var sel = __mcp_activateLayerByName("${jsString(layerName)}"); if (!sel.ok) return sel;`
+      ? `var sel = __mcp_activateLayerByName(${jsStringLiteral(layerName)}); if (!sel.ok) return sel;`
       : '';
     return `
     ${helperFunctions}
@@ -3835,7 +3837,7 @@ export const ExtendScriptSnippets = {
    */
   createSmartObjectViaCopy: (layerName?: string) => {
     const layerSelect = layerName
-      ? `var sel = __mcp_activateLayerByName("${jsString(layerName)}"); if (!sel.ok) return sel;`
+      ? `var sel = __mcp_activateLayerByName(${jsStringLiteral(layerName)}); if (!sel.ok) return sel;`
       : '';
     return `
     ${helperFunctions}
@@ -3882,8 +3884,8 @@ export const ExtendScriptSnippets = {
    * Classic "remove tourists with median stack" without any generative AI.
    */
   imageStackMode: (files: string[], mode: string) => {
-    const filesJson = JSON.stringify(files);
-    const modeId = jsString(mode);
+    const filesJson = "[" + files.map(file => jsStringLiteral(toAdobePath(file))).join(",") + "]";
+    const modeId = jsStringLiteral(mode);
     return `
     ${helperFunctions}
 
@@ -3937,15 +3939,15 @@ export const ExtendScriptSnippets = {
     var renderers = { stackModeMean: 'avrg', stackModeMedian: 'medn', stackModeMaximum: 'maxx',
       stackModeMinimum: 'minn', stackModeSummation: 'summ', stackModeStandardDeviation: 'stdv' };
     var setDesc = new ActionDescriptor();
-    setDesc.putString(cTID('Nm  '), "${modeId}");
-    setDesc.putClass(sTID('imageStackPlugin'), cTID(renderers["${modeId}"]));
+    setDesc.putString(cTID('Nm  '), ${modeId});
+    setDesc.putClass(sTID('imageStackPlugin'), cTID(renderers[${modeId}]));
     executeAction(sTID('applyImageStackPluginRenderer'), setDesc, DialogModes.NO);
 
     return {
       stacked: true,
       document_id: base.id,
       file_count: files.length,
-      mode: "${modeId}",
+      mode: ${modeId},
       layer_name: base.activeLayer.name
     };
   `;
@@ -3955,7 +3957,7 @@ export const ExtendScriptSnippets = {
    * Export a copy of the active document as PNG/JPEG (Save for Web) or WebP/AVIF (native, PS 23.2+).
    */
   exportAs: (filePath: string, format: 'PNG' | 'JPEG' | 'WEBP' | 'AVIF', quality: number) => {
-    const escaped = jsString(filePath);
+    const escaped = jsStringLiteral(toAdobePath(filePath));
     const q = Math.max(0, Math.min(100, Math.round(quality)));
     return `
     ${helperFunctions}
@@ -3965,7 +3967,7 @@ export const ExtendScriptSnippets = {
     }
     var doc = app.activeDocument;
     app.displayDialogs = DialogModes.NO;
-    var outFile = new File("${escaped}");
+    var outFile = new File(${escaped});
 
     if ('${format}' === 'PNG' || '${format}' === 'JPEG') {
       var opts = new ExportOptionsSaveForWeb();
@@ -3979,7 +3981,7 @@ export const ExtendScriptSnippets = {
       doc.exportDocument(outFile, ExportType.SAVEFORWEB, opts);
       return {
         exported: true,
-        path: "${escaped}",
+        path: ${escaped},
         format: '${format}',
         method: 'save_for_web'
       };
@@ -4012,7 +4014,7 @@ export const ExtendScriptSnippets = {
     }
     return {
       exported: true,
-      path: "${escaped}",
+      path: ${escaped},
       format: '${format}',
       method: 'native_save_as'
     };

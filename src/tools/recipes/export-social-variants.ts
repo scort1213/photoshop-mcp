@@ -1,7 +1,8 @@
+import { toAdobePath } from '../../utils/local-path.js';
 import { ToolDefinition, ToolResult } from '../../core/tool-registry.js';
-import { resolveExportPath } from '../../lib/export-paths.js';
+import { resolveGeneratedExportPath } from '../../lib/export-paths.js';
 import { PhotoshopConnection } from '../../platform/connection.js';
-import { clampInt, executeStandaloneRecipe, jsString } from './_shared.js';
+import { clampInt, executeStandaloneRecipe, jsStringLiteral } from './_shared.js';
 
 const TOOL_NAME = 'photoshop_recipe_export_social_variants';
 
@@ -94,14 +95,14 @@ async function runExportSocialVariants(
   const quality = clampQuality(args.quality);
 
   const variants = platforms.map((spec) => {
-    const path = resolveExportPath(`social-${spec.slug}-${Date.now()}.jpg`, 'jpg');
+    const path = resolveGeneratedExportPath(`social-${spec.slug}-${Date.now()}.jpg`, 'jpg');
     return { ...spec, path };
   });
 
   const variantsLiteral = variants
     .map(
       (v) =>
-        `{ slug: "${jsString(v.slug)}", width: ${v.width}, height: ${v.height}, path: "${jsString(v.path)}" }`
+        `{ slug: ${jsStringLiteral(v.slug)}, width: ${v.width}, height: ${v.height}, path: ${jsStringLiteral(toAdobePath(v.path))} }`
     )
     .join(', ');
 

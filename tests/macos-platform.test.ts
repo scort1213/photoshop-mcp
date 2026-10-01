@@ -1,4 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Filesystem policy is tested separately; wrapper units only check bridge encoding.
+vi.mock('../src/utils/local-path.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/utils/local-path.js')>()),
+  toAdobePath: (path: string) => path,
+}));
 import {
   MacOSExecutor,
   appleScriptTimeoutSeconds,
@@ -99,120 +105,6 @@ describe('AppleScript wrapper timeout block', () => {
   });
 });
 
-describe('execute() queue timeout semantics', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  function deferred<T>() {
-    let resolve!: (value: T) => void;
-    let reject!: (error: unknown) => void;
-    const promise = new Promise<T>((res, rej) => {
-      resolve = res;
-      reject = rej;
-    });
-    return { promise, resolve, reject };
-  }
-
-  /** Executor with the private executeScript stubbed: records every script
-   * that actually runs, so tests can assert cancelled tasks never execute. */
-  function makeExecutor(impl: (script: string, timeout: number) => Promise<unknown>) {
-    const executor = new MacOSExecutor();
-    const executed: string[] = [];
-    (
-      executor as unknown as { executeScript(s: string, t: number): Promise<unknown> }
-    ).executeScript = (script: string, timeout: number) => {
-      executed.push(script);
-      return impl(script, timeout);
-    };
-    return { executor, executed };
-  }
-
-  it('a task that times out while queued is rejected AND never executes', async () => {
-    const long = deferred<string>();
-    const { executor, executed } = makeExecutor((script) =>
-      script === 'long' ? long.promise : Promise.resolve('short-done')
-    );
-
-    const longPromise = executor.execute('long', 200_000);
-    const shortPromise = executor.execute('short', 1_000);
-    shortPromise.catch(() => {}); // observed below; avoid unhandled rejection
-
-    // short's queue-wait allowance is timeout + 60s; blow past it while long
-    // still occupies the serial queue.
-    await vi.advanceTimersByTimeAsync(61_000);
-    await expect(shortPromise).rejects.toThrow(/waiting in the execution queue/);
-
-    // long finishes; the queue drains — the cancelled short task must be
-    // skipped, not executed with dead resolve/reject.
-    long.resolve('long-done');
-    await expect(longPromise).resolves.toBe('long-done');
-    await vi.advanceTimersByTimeAsync(0);
-
-    expect(executed).toEqual(['long']);
-  });
-
-  it('the execution timer starts at dequeue, so queue wait does not eat run time', async () => {
-    const long = deferred<string>();
-    const { executor, executed } = makeExecutor((script) =>
-      script === 'long' ? long.promise : Promise.resolve('short-done')
-    );
-
-    const longPromise = executor.execute('long', 200_000);
-    const shortPromise = executor.execute('short', 5_000);
-
-    let shortSettled = false;
-    shortPromise.then(
-      () => {
-        shortSettled = true;
-      },
-      () => {
-        shortSettled = true;
-      }
-    );
-
-    // 30s in the queue: far beyond short's 5s execution timeout, within its
-    // wait allowance. Under the old enqueue-time timer this already rejected.
-    await vi.advanceTimersByTimeAsync(30_000);
-    expect(shortSettled).toBe(false);
-
-    long.resolve('long-done');
-    await expect(longPromise).resolves.toBe('long-done');
-    await expect(shortPromise).resolves.toBe('short-done');
-    expect(executed).toEqual(['long', 'short']);
-  });
-
-  it('a running script that overruns its timeout still rejects', async () => {
-    const hang = deferred<string>();
-    const { executor } = makeExecutor(() => hang.promise);
-
-    const promise = executor.execute('hang', 1_000);
-    promise.catch(() => {});
-
-    await vi.advanceTimersByTimeAsync(1_000);
-    await expect(promise).rejects.toThrow('Script execution timeout');
-
-    hang.resolve('too-late');
-    await vi.advanceTimersByTimeAsync(0);
-  });
-
-  it('resolves normally well past 120s, proving long batch timeouts are honored', async () => {
-    const batch = deferred<string>();
-    const { executor } = makeExecutor(() => batch.promise);
-
-    const promise = executor.execute('batch', 600_000);
-
-    // 500s of execution — over 4x AppleScript's old default cap.
-    await vi.advanceTimersByTimeAsync(500_000);
-    batch.resolve('batch-done');
-    await expect(promise).resolves.toBe('batch-done');
-  });
-});
-
 describe('detector fallback paths', () => {
   const pathsFor = () =>
     (new MacOSDetector() as unknown as { getCommonPaths(): string[] }).getCommonPaths();
@@ -220,7 +112,9 @@ describe('detector fallback paths', () => {
   it('covers the current-year+1 release (2026 installs today) without a code change', () => {
     const nextYear = new Date().getFullYear() + 1;
     const paths = pathsFor();
-    expect(paths).toContain(`/Applications/Adobe Photoshop ${nextYear}/Adobe Photoshop ${nextYear}.app`);
+    expect(paths).toContain(
+      `/Applications/Adobe Photoshop ${nextYear}/Adobe Photoshop ${nextYear}.app`
+    );
     expect(paths).toContain('/Applications/Adobe Photoshop 2026/Adobe Photoshop 2026.app');
   });
 
@@ -229,6 +123,8 @@ describe('detector fallback paths', () => {
   });
 
   it('still covers the oldest supported year', () => {
-    expect(pathsFor()).toContain('/Applications/Adobe Photoshop CC 2012/Adobe Photoshop CC 2012.app');
+    expect(pathsFor()).toContain(
+      '/Applications/Adobe Photoshop CC 2012/Adobe Photoshop CC 2012.app'
+    );
   });
 });

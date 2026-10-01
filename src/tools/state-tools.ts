@@ -1,4 +1,7 @@
-import { readFile, unlink } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { createLocalTempDirectory, removeLocalTempDirectory } from '../utils/local-temp.js';
+import { resolveLocalPath } from '../utils/local-path.js';
 import { ToolDefinition, ToolResult } from '../core/tool-registry.js';
 import { ExtendScriptSnippets } from '../api/extendscript.js';
 import { PhotoshopAPIFactory } from '../api/photoshop-api.js';
@@ -102,16 +105,19 @@ async function getPreview(
   const maxDimension = (args.max_dimension_px as number) || 1024;
   const quality = (args.quality as number) || 8;
 
-  let tempPath: string | undefined;
+  let directory: string | undefined;
+  let uncertain = false;
 
   try {
+    directory = await createLocalTempDirectory('preview-');
+    const tempPath = resolveLocalPath(join(directory, 'preview.jpg'));
     const result = (await runScript(
       connection,
-      ExtendScriptSnippets.exportPreview(maxDimension, quality)
+      ExtendScriptSnippets.exportPreview(tempPath, maxDimension, quality)
     )) as { path: string; width: number; height: number; mimeType: string };
 
-    tempPath = result.path;
-    const buffer = await readFile(tempPath);
+    // The bridge's returned path is informational, never an authority to read/delete.
+    const buffer = await readFile(resolveLocalPath(tempPath));
     const dimensions = jpegDimensions(buffer);
     if (dimensions.width !== result.width || dimensions.height !== result.height ||
         Math.max(dimensions.width, dimensions.height) > maxDimension) {
@@ -151,12 +157,14 @@ async function getPreview(
       ],
     };
   } catch (error) {
+    uncertain = String(error).includes('outcome_unknown');
     return envelopeToToolResult(
-      classifyError(error instanceof Error ? error.message : String(error))
+      classifyError((error instanceof Error ? error.message : String(error)) +
+        (uncertain && directory ? '; inspect temporary files: ' + directory : ''))
     );
   } finally {
-    if (tempPath) {
-      await unlink(tempPath).catch(() => undefined);
+    if (directory && !uncertain) {
+      await removeLocalTempDirectory(directory).catch(() => undefined);
     }
   }
 }

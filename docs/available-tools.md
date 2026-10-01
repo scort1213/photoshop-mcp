@@ -101,14 +101,14 @@ photoshop_save_document({
 ```
 
 #### `photoshop_close_document`
-Close the active document.
+Save a local copy and keep it open (`save:true`), or explicitly close without saving (`save:false`).
 
 **Parameters:**
-- `save` (boolean, optional): Save before closing (default: false)
+- `save` (boolean, optional): Save a local copy and keep the document open (default: false means close without saving)
 - `path` (string, optional): Local PSD, PSB, JPEG, PNG or TIFF destination. An existing local filename is reused; otherwise provide this path. Other formats require a supported local destination.
 - `overwrite` (boolean, optional): Allow replacing an explicit destination. Saving back to the current local filename already implies replacement.
 
-Save or validation failure leaves the document open. Saving uses an explicit local copy and then closes without an implicit cloud-document save.
+With `save:true`, success returns `saved:true, closed:false` plus `path` and `document_id`. Failures also leave the document open. Never automatically follow a save-only result with a discard-close request.
 
 ```javascript
 // Example: Close without saving
@@ -1013,7 +1013,7 @@ Color Lookup (3D LUT) adjustment layer — cinematic grades in one step.
 - `lut` (string, required): Built-in LUT name (e.g. `"Crisp_Warm.3dl"`, `"Kodak 5218 Fuji 3510.3dl"`, `"Moonlight.3dl"`) or absolute path to a `.cube`/`.3dl`/`.look` file
 
 ```javascript
-photoshop_apply_lut({ lut: "Crisp_Warm.3dl" })
+photoshop_apply_lut({ lut: "/absolute/local/path/Crisp_Warm.3dl" })
 ```
 
 #### `photoshop_adjust_vibrance`

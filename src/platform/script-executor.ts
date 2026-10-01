@@ -7,6 +7,9 @@ export interface ScriptExecutor {
    */
   execute(script: string, timeout?: number): Promise<unknown>;
 
+  /** Serialize a compound operation under one deadline and one shared lease. */
+  runTransaction<T>(body: () => Promise<T>, timeout?: number): Promise<T>;
+
   /**
    * Check if Photoshop is running
    */

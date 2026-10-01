@@ -1,18 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Keep dispatch deadlines independent of mount-command I/O; local-path.test.ts covers path policy.
-vi.mock('../src/utils/local-path.js', () => ({ assertLocalPath: () => undefined }));
+vi.mock('../src/utils/local-path.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/utils/local-path.js')>()),
+  resolveLocalPath: (path: string) => path,
+  getLocalTempRoot: () => process.env.PHOTOSHOP_SAFETY_DIR!,
+  toAdobePath: (path: string) => path,
+}));
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { WindowsExecutor, AdobeDispatchRejectedError, isComDispatchRejection } from '../src/platform/windows-executor.js';
+import {
+  WindowsExecutor,
+  AdobeDispatchRejectedError,
+  isComDispatchRejection,
+} from '../src/platform/windows-executor.js';
 import { access, clearQuarantine, assertSafe } from '../src/platform/operation-safety.js';
 import { parseExtendScriptPayload } from '../src/utils/extendscript-result.js';
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 class FakeAdobe extends WindowsExecutor {
   calls: string[] = [];
-  protected override async executeScript(script: string): Promise<unknown> {
+  protected override async executeScript(
+    script: string,
+    _onChild: (pid: number) => Promise<void>,
+    beforeDispatch: () => void
+  ): Promise<unknown> {
+    beforeDispatch();
     this.calls.push(script);
     if (script === 'slow') await delay(180);
     if (script === 'partial-error') throw new Error('changed a layer, then failed');

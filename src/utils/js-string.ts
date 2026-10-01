@@ -16,3 +16,10 @@ export function jsString(value: string): string {
 export function jsStringLiteral(value: string): string {
   return `"${jsString(value)}"`;
 }
+
+/** JSON as ES3-compatible source, including line terminators and Unicode names. */
+export function jsValueLiteral(value: unknown): string {
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) throw new TypeError('Value cannot be represented as JSON');
+  return serialized.replace(/[^\x20-\x7e]/g, ch => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0'));
+}

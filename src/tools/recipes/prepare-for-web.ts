@@ -1,8 +1,9 @@
+import { toAdobePath } from '../../utils/local-path.js';
 import { randomBytes } from 'node:crypto';
 import { ToolDefinition, ToolResult } from '../../core/tool-registry.js';
 import { resolveExportPath } from '../../lib/export-paths.js';
 import { PhotoshopConnection } from '../../platform/connection.js';
-import { clampInt, executeStandaloneRecipe, jsString, toolException } from './_shared.js';
+import { clampInt, executeStandaloneRecipe, jsStringLiteral, toolException } from './_shared.js';
 import { atomicSave } from '../../utils/atomic-save.js';
 
 const TOOL_NAME = 'photoshop_recipe_prepare_for_web';
@@ -50,7 +51,7 @@ export function bindPrepareForWeb(connection: PhotoshopConnection): ToolDefiniti
           path: {
             type: 'string',
             description:
-              'Optional output path. Absolute paths used as-is. Relative paths resolve under ~/.photoshop-mcp/exports[/<chat-id>]. Omit to auto-generate.',
+              'Optional native absolute local output path. Omit to generate a filename in the verified local exports directory.',
           },
         },
       },
@@ -100,7 +101,7 @@ async function runPrepareForWeb(
       var sharpenLayer = dup.activeLayer;
       sharpenLayer.applyUnSharpMask(30, 0.6, 0);
 
-      var outFile = new File("${jsString(savePath)}");
+      var outFile = new File(${jsStringLiteral(toAdobePath(savePath))});
       ${
         format === 'jpeg'
           ? `var jpegOptions = new JPEGSaveOptions(); jpegOptions.quality = ${quality}; jpegOptions.embedColorProfile = true; dup.saveAs(outFile, jpegOptions, true);`

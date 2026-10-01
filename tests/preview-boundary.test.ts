@@ -30,7 +30,7 @@ it.each([false,true])('flattens artboards before resizing and cleans up duplicat
     DocumentMode:{RGB:'RGB'},ChangeMode:{RGB:'RGB'},BitsPerChannelType:{EIGHT:'8'},
     ResampleMethod:{BICUBIC:'bicubic'},FormatOptions:{STANDARDBASELINE:'baseline'},SaveOptions:{DONOTSAVECHANGES:'discard'},
   };
-  const run=()=>runInNewContext('(function(){'+ExtendScriptSnippets.exportPreview(480,8)+'})()',context);
+  const run=()=>runInNewContext('(function(){'+ExtendScriptSnippets.exportPreview('/tmp/preview-unit.jpg',480,8)+'})()',context);
   if(fail)expect(run).toThrow('ENOSPC');
   else expect(run()).toMatchObject({width:480,height:120,mimeType:'image/jpeg'});
   expect(operations).toEqual(['flatten','resize','save','close']);

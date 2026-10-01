@@ -1,124 +1,79 @@
-import { exec, execFile, spawn } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
-import { readFile, writeFile, unlink, mkdtemp, rm } from 'fs/promises';
-import { tmpdir } from 'os';
+import { readFile, writeFile, mkdtemp, mkdir, rm } from 'fs/promises';
 import { join } from 'path';
 import { prefixExtendScriptBom } from '../utils/extendscript-file.js';
 import { parseExtendScriptPayload } from '../utils/extendscript-result.js';
 import { Logger } from '../utils/logger.js';
-import { acquireLease, assertSafe, quarantine, clearQuarantine, access } from './operation-safety.js';
+import {
+  DispatchNotStartedError,
+  OperationRunner,
+  runOperationBridge,
+  registerInspectionPath,
+  operationNeedsInspection,
+} from './operation-safety.js';
+import { getLocalTempRoot, resolveLocalPath, toAdobePath } from '../utils/local-path.js';
+import { getWindowsSystemTool } from '../utils/system-tools.js';
 import { ScriptExecutor } from './script-executor.js';
 
-const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
-export class AdobeDispatchRejectedError extends Error {
+export class AdobeDispatchRejectedError extends DispatchNotStartedError {
   constructor() {
-    super('application_busy: Photoshop rejected the COM request before execution (RPC_E_SERVERCALL_RETRYLATER); no automatic retry was performed');
+    super(
+      'application_busy: Photoshop rejected the COM request before execution (RPC_E_SERVERCALL_RETRYLATER); no automatic retry was performed'
+    );
   }
 }
 
 export function isComDispatchRejection(error: unknown, output: string): boolean {
   // Only the VBS transport exit proves rejection. A script body returning an
   // error string with the same number must still be treated as partial failure.
-  return !!error && typeof error === 'object' && 'code' in error && error.code === 1 &&
-    /^ERROR: COM -2147417846 \([^\r\n]*\):/.test(output.trim());
+  return (
+    !!error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    error.code === 1 &&
+    /^ERROR: COM -2147417846 \([^\r\n]*\):/.test(output.trim())
+  );
 }
 
 export class WindowsExecutor implements ScriptExecutor {
   private logger: Logger;
-  private scriptQueue: Array<() => Promise<unknown>> = [];
-  private isProcessing = false;
+  private operations = new OperationRunner();
 
   constructor() {
     this.logger = new Logger('WindowsExecutor');
   }
 
-  async execute(script: string, timeout: number = 30000): Promise<unknown> {
-    if (!Number.isFinite(timeout) || timeout <= 0) throw new Error('invalid_timeout');
-    const deadline = Date.now() + timeout;
-    const mode = access.getStore() || 'write';
-    return new Promise((resolve, reject) => {
-      let expired = false;
-      let dispatched = false;
-      let timeoutWork: Promise<void> | undefined;
-      const timeoutId = setTimeout(() => {
-        expired = true;
-        timeoutWork = (async () => {
-          if (dispatched && mode === 'write') await quarantine('Script exceeded deadline; execution may still be running');
-          reject(new Error(dispatched ? 'outcome_unknown: execution timeout; inspect state before recovery' : 'queue_timeout: operation was not dispatched'));
-        })().catch(reject);
-      }, timeout);
-      this.scriptQueue.push(async () => access.run(mode, async () => {
-        if (expired || Date.now() >= deadline) { clearTimeout(timeoutId); reject(new Error('queue_timeout: operation was not dispatched')); return; }
-        let lease: Awaited<ReturnType<typeof acquireLease>> | undefined;
-        let result: unknown;
-        let failure: unknown;
-        try {
-          lease = await acquireLease(deadline);
-          if (expired || Date.now() >= deadline) throw new Error('queue_timeout: operation was not dispatched');
-          await assertSafe();
-          if (expired || Date.now() >= deadline) throw new Error('queue_timeout: operation was not dispatched');
-          if (mode === 'write') await quarantine('Write in progress; inspect state if interrupted');
-          if (expired || Date.now() >= deadline) {
-            if (mode === 'write') await clearQuarantine();
-            throw new Error('queue_timeout: operation was not dispatched');
-          }
-          dispatched = true;
-          result = await this.executeScript(script, lease.child, () => {
-            // Filesystem preparation can stall after the queue lease is taken.
-            // Do not start a new COM process after the public deadline expires.
-            if (expired || Date.now() >= deadline) {
-              throw new Error('queue_timeout: bridge preparation expired before Adobe dispatch');
-            }
-          });
-          clearTimeout(timeoutId);
-          if (!expired && mode === 'write') await clearQuarantine();
-        } catch (error) {
-          failure = error;
-          if (error instanceof AdobeDispatchRejectedError && !expired && mode === 'write') {
-            await clearQuarantine();
-          }
-        }
-        finally {
-          clearTimeout(timeoutId);
-          await timeoutWork;
-          if (lease) await lease.release();
-        }
-        if (failure) reject(failure);
-        else if (!expired) resolve(result);
-      }).catch(reject));
-      void this.processQueue();
-    });
+  async execute(script: string, timeout = 30000): Promise<unknown> {
+    return this.operations.run(
+      () =>
+        runOperationBridge((onChild, beforeDispatch) =>
+          this.executeScript(script, onChild, beforeDispatch)
+        ),
+      timeout
+    );
   }
 
-  private async processQueue() {
-    if (this.isProcessing || this.scriptQueue.length === 0) {
-      return;
-    }
-
-    this.isProcessing = true;
-
-    while (this.scriptQueue.length > 0) {
-      const task = this.scriptQueue.shift();
-      if (task) {
-        try {
-          await task();
-        } catch (error) {
-          this.logger.error('Script execution failed:', error);
-        }
-      }
-    }
-
-    this.isProcessing = false;
+  runTransaction<T>(body: () => Promise<T>, timeout = 30000): Promise<T> {
+    return this.operations.run(body, timeout);
   }
 
-  protected async executeScript(script: string, onChild: (pid: number) => Promise<void>, assertDispatchAllowed: () => void = () => {}): Promise<unknown> {
+  protected async executeScript(
+    script: string,
+    onChild: (pid: number) => Promise<void>,
+    assertDispatchAllowed: () => void = () => {}
+  ): Promise<unknown> {
     // For Windows, we'll use a combination of VBScript/JScript to communicate with Photoshop via COM
     // Write script to temporary file
-    const directory = await mkdtemp(join(tmpdir(), 'photoshop-mcp-'));
+    const temporaryRoot = getLocalTempRoot();
+    await mkdir(temporaryRoot, { recursive: true, mode: 0o700 });
+    const directory = await mkdtemp(join(temporaryRoot, 'photoshop-mcp-'));
+    registerInspectionPath(directory);
     const tempScriptPath = join(directory, 'script.jsx');
-    
+    let uncertain = false;
+
     try {
       await writeFile(tempScriptPath, prefixExtendScriptBom(script), 'utf8');
 
@@ -126,42 +81,70 @@ export class WindowsExecutor implements ScriptExecutor {
       const vbsPath = join(directory, 'bridge.vbs');
       const resultPath = `${vbsPath}.result`;
       const vbsScript = this.createVBSWrapper(tempScriptPath, resultPath);
-      
+
       await writeFile(vbsPath, '\uFEFF' + vbsScript, 'utf16le');
 
+      // Use a Unicode result file: cscript stdout uses a locale-dependent
+      // code page, and //U can emit no output through Node pipes on Windows.
+      let bridgeError: unknown;
       try {
-        // Use a Unicode result file: cscript stdout uses a locale-dependent
-        // code page, and //U can emit no output through Node pipes on Windows.
+        const cscript = getWindowsSystemTool('cscript');
+        assertDispatchAllowed();
+        const execution = execFileAsync(cscript, ['//nologo', vbsPath], { windowsHide: true });
+        // Attach the rejection handler before awaiting filesystem work.
+        const completion = execution.then(
+          () => null,
+          (error: unknown) => error
+        );
+        let metadataError: unknown;
         try {
-          assertDispatchAllowed();
-          const execution = execFileAsync('cscript.exe', ['//nologo', vbsPath], { windowsHide: true });
-          // Attach the rejection handler before awaiting filesystem work.
-          const completion = execution.then(() => null, (error: unknown) => error);
-          let metadataError: unknown;
-          try { if (execution.child.pid) await onChild(execution.child.pid); } catch (error) { metadataError = error; }
-          const executionError = await completion;
-          if (metadataError) throw new Error('outcome_unknown: failed to record Adobe bridge process');
-          if (executionError) throw executionError;
+          if (execution.child.pid) await onChild(execution.child.pid);
         } catch (error) {
-          const details = await readFile(resultPath, 'utf16le').catch(() => '');
-          if (isComDispatchRejection(error, details)) throw new AdobeDispatchRejectedError();
-          if (details) this.parseResult(details);
-          throw error;
+          metadataError = error;
         }
-        return this.parseResult(await readFile(resultPath, 'utf16le'));
-      } finally {
-        // Cleanup VBS file
-        await unlink(vbsPath).catch(() => {});
-        await unlink(resultPath).catch(() => {});
+        const executionError = await completion;
+        if (metadataError)
+          throw new Error('outcome_unknown: failed to record Adobe bridge process');
+        if (executionError) {
+          bridgeError = executionError;
+          throw executionError;
+        }
+      } catch (error) {
+        const details = await readFile(resultPath, 'utf16le').catch(() => '');
+        if (isComDispatchRejection(error, details)) throw new AdobeDispatchRejectedError();
+        if (details) this.parseResult(details);
+        if (bridgeError)
+          throw new Error(
+            'outcome_unknown: Adobe bridge failed; inspect document state: ' +
+              (error instanceof Error ? error.message : String(error))
+          );
+        throw error;
       }
+      const output = await readFile(resultPath, 'utf16le').catch(() => {
+        throw new Error('outcome_unknown: Adobe bridge produced no result file');
+      });
+      return this.parseResult(output);
+    } catch (error) {
+      uncertain = String(error).includes('outcome_unknown');
+      if (uncertain)
+        throw new Error(
+          (error instanceof Error ? error.message : String(error)) +
+            '; inspection_path=' +
+            directory
+        );
+      throw error;
     } finally {
       // Cleanup JSX file
-      await rm(directory, { recursive: true, force: true });
+      if (!uncertain && !operationNeedsInspection())
+        await rm(directory, { recursive: true, force: true });
     }
   }
 
   private createVBSWrapper(jsxPath: string, resultPath: string): string {
-    const loadScript = `$.evalFile(${JSON.stringify(jsxPath)})`.replace(/"/g, '""');
+    const loadScript = `$.evalFile(new File(${JSON.stringify(toAdobePath(jsxPath))}))`.replace(
+      /"/g,
+      '""'
+    );
     return `
 Sub Emit(value)
   Dim output
@@ -193,10 +176,13 @@ End If
 
   private parseResult(output: string): unknown {
     const trimmed = output.trim();
-    
+
     // Check for error
     if (trimmed.startsWith('ERROR:')) {
-      throw new Error(trimmed.substring(6).trim() || 'Adobe bridge returned an error without a description; inspect document state before recovery');
+      throw new Error(
+        trimmed.substring(6).trim() ||
+          'Adobe bridge returned an error without a description; inspect document state before recovery'
+      );
     }
 
     return parseExtendScriptPayload(trimmed);
@@ -204,7 +190,11 @@ End If
 
   async isPhotoshopRunning(): Promise<boolean> {
     try {
-      const { stdout } = await execAsync('tasklist /FI "IMAGENAME eq Photoshop.exe"');
+      const { stdout } = await execFileAsync(
+        getWindowsSystemTool('tasklist'),
+        ['/FI', 'IMAGENAME eq Photoshop.exe'],
+        { windowsHide: true }
+      );
       return stdout.toLowerCase().includes('photoshop.exe');
     } catch {
       return false;
@@ -212,6 +202,7 @@ End If
   }
 
   async launchPhotoshop(photoshopPath: string): Promise<void> {
+    photoshopPath = resolveLocalPath(photoshopPath);
     return new Promise((resolve, reject) => {
       this.logger.info(`Launching Photoshop: ${photoshopPath}`);
 

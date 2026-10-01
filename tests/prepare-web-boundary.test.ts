@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { runInNewContext } from 'node:vm';
 import { bindPrepareForWeb } from '../src/tools/recipes/prepare-for-web.js';
@@ -8,7 +10,7 @@ vi.mock('../src/api/photoshop-api.js', () => ({
   PhotoshopAPIFactory: class { async createAPI() { return mocks; } },
 }));
 vi.mock('../src/utils/atomic-save.js', () => ({
-  atomicSave: async (_p: string, _f: string, _o: boolean, write: (p: string) => Promise<void>) => write('C:/stage/output.png'),
+  atomicSave: async (_p: string, _f: string, _o: boolean, write: (p: string) => Promise<void>) => write(join(tmpdir(), 'stage/output.png')),
 }));
 
 it.each(['none', 'profile', 'sharpen'])('preserves source history and reports %s export failure', async failure => {
@@ -28,7 +30,7 @@ it.each(['none', 'profile', 'sharpen'])('preserves source history and reports %s
     File: class { fsName: string; constructor(p: string) { this.fsName=p; } },
     PNGSaveOptions: class {},
   }));
-  const result = await bindPrepareForWeb({} as PhotoshopConnection).handler({ path: 'C:/result.png', format: 'png' });
+  const result = await bindPrepareForWeb({} as PhotoshopConnection).handler({ path: join(tmpdir(), 'result.png'), format: 'png' });
   expect(suspendHistory).not.toHaveBeenCalled();
   expect(close).toHaveBeenCalledTimes(1);
   if (failure === 'none') {

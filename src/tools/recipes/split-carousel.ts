@@ -1,7 +1,8 @@
+import { toAdobePath } from '../../utils/local-path.js';
 import { ToolDefinition, ToolResult } from '../../core/tool-registry.js';
-import { resolveExportPath } from '../../lib/export-paths.js';
+import { resolveGeneratedExportPath } from '../../lib/export-paths.js';
 import { PhotoshopConnection } from '../../platform/connection.js';
-import { clampInt, executeStandaloneRecipe, jsString, toolFailure } from './_shared.js';
+import { clampInt, executeStandaloneRecipe, jsStringLiteral, toolFailure } from './_shared.js';
 
 const TOOL_NAME = 'photoshop_recipe_split_carousel';
 
@@ -99,10 +100,10 @@ async function runSplitCarousel(
   const paths: string[] = [];
   for (let i = 0; i < slides; i++) {
     const seq = String(i + 1).padStart(2, '0');
-    paths.push(resolveExportPath(`carousel-${stamp}-${seq}.${format}`, format));
+    paths.push(resolveGeneratedExportPath(`carousel-${stamp}-${seq}.${format}`, format));
   }
 
-  const pathsLiteral = paths.map((p) => `"${jsString(p)}"`).join(', ');
+  const pathsLiteral = paths.map((p) => `${jsStringLiteral(toAdobePath(p))}`).join(', ');
   const saveSnippet =
     format === 'png'
       ? `var saveOptions = new PNGSaveOptions();`

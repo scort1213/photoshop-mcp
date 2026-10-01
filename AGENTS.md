@@ -12,6 +12,9 @@ Start with [LOCAL_ONLY.md](LOCAL_ONLY.md) and [llms.txt](llms.txt).
 - Scripts/actions are trusted code with instruction-only restrictions, not a sandbox. Do not claim an unbypassable offline guarantee.
 - Adobe's own licensing/background services and the AI host's cloud processing are out of scope.
 
+- Fixed paths and XML/CSV image references require native absolute local filenames. Do not supply relative/~ paths or aliases/shortcuts. Keep the checked canonical path through every filesystem and Adobe boundary.
+- `photoshop_close_document(save:true)` saves and leaves the document open. Report `saved:true, closed:false`; do not automatically close/discard afterward with another tool or custom JSX.
+
 ## Workflow
 
 1. Discover current tools/prompts and read capabilities.

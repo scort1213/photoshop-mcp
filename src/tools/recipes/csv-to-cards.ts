@@ -1,10 +1,10 @@
-import { assertLocalPath } from '../../utils/local-path.js';
-import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { toAdobePath, resolveLocalPath } from '../../utils/local-path.js';
+import { createLocalTempDirectory, removeLocalTempDirectory } from '../../utils/local-temp.js';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ToolDefinition, ToolResult } from '../../core/tool-registry.js';
 import { PhotoshopConnection } from '../../platform/connection.js';
-import { executeStandaloneRecipe, jsString } from './_shared.js';
+import { executeStandaloneRecipe, jsStringLiteral } from './_shared.js';
 import { readFileSync } from 'node:fs';
 
 const TOOL_NAME = 'photoshop_recipe_csv_to_cards';
@@ -120,7 +120,7 @@ function buildVariablesXml(columns: string[], dataRows: string[][]): string {
       const value = cells[c] ?? '';
       if (IMAGE_CELL.test(value.trim())) {
         lines.push(
-          `      <variable var="${xmlEscape(col)}" kind="pixel" trait="fileref" category="image"><value>${xmlEscape(value.trim())}</value></variable>`
+          `      <variable var="${xmlEscape(col)}" kind="pixel" trait="fileref" category="image"><value>${xmlEscape(toAdobePath(value))}</value></variable>`
         );
       } else {
         lines.push(
@@ -138,8 +138,8 @@ async function runCsvToCards(
   connection: PhotoshopConnection,
   args: Record<string, unknown>
 ): Promise<ToolResult> {
-  const csvPath = typeof args.csv_path === 'string' ? args.csv_path.trim() : '';
-  const outputDir = typeof args.output_dir === 'string' ? args.output_dir.trim() : '';
+  let csvPath = typeof args.csv_path === 'string' ? args.csv_path : '';
+  let outputDir = typeof args.output_dir === 'string' ? args.output_dir : '';
   const format = OUTPUT_FORMATS.includes(args.format as (typeof OUTPUT_FORMATS)[number])
     ? (args.format as (typeof OUTPUT_FORMATS)[number])
     : 'JPEG';
@@ -162,6 +162,8 @@ async function runCsvToCards(
 
   let csvText: string;
   try {
+    csvPath = resolveLocalPath(csvPath);
+    outputDir = resolveLocalPath(outputDir);
     csvText = readFileSync(csvPath, 'utf8');
   } catch (error) {
     return {
@@ -198,14 +200,14 @@ async function runCsvToCards(
 
   const columns = rows[0].map((c) => c.trim()).filter(Boolean);
   const dataRows = rows.slice(1);
-  for (const cells of dataRows) {
-    for (const value of cells) if (IMAGE_CELL.test(value.trim())) assertLocalPath(value.trim());
-  }
   const xml = buildVariablesXml(columns, dataRows);
-  const temporaryDir = mkdtempSync(join(tmpdir(), 'photoshop-mcp-datasets-'));
-  const xmlPath = join(temporaryDir, 'variables.xml');
-
   const ext = format === 'PNG' ? 'png' : 'jpg';
+  const outputs = dataRows.map((_, index) => toAdobePath(join(outputDir, `row_${index + 1}.${ext}`)));
+  const outputPathsLiteral = '[' + outputs.map(jsStringLiteral).join(',') + ']';
+  const temporaryDir = await createLocalTempDirectory('datasets-');
+  let uncertain = false;
+  try {
+  const xmlPath = join(temporaryDir, 'variables.xml');
   const body = `
     if (app.documents.length === 0) {
       return { ok: false, code: 'no_active_document', message: 'Open the template PSD first', suggested_next_tool: 'photoshop_open_image' };
@@ -214,13 +216,13 @@ async function runCsvToCards(
     if (typeof doc.importVariables !== 'function' || typeof doc.dataSets === 'undefined') {
       return { ok: false, code: 'unsupported', message: 'Dataset DOM is unavailable in this Photoshop bridge; import CSV using Image > Variables and export Data Sets As Files' };
     }
-    var xmlFile = new File("${jsString(xmlPath)}");
+    var xmlFile = new File(${jsStringLiteral(toAdobePath(xmlPath))});
     if (!xmlFile.exists) {
-      return { ok: false, code: 'file_not_found', message: 'variables XML missing: ${jsString(xmlPath)}' };
+      return { ok: false, code: 'file_not_found', message: ${jsStringLiteral('variables XML missing: ' + xmlPath)} };
     }
-    var folder = new Folder("${jsString(outputDir)}");
+    var folder = new Folder(${jsStringLiteral(toAdobePath(outputDir))});
     if (!folder.exists && !folder.create()) {
-      return { ok: false, code: 'output_dir_not_writable', message: 'Cannot create output_dir: ${jsString(outputDir)}' };
+      return { ok: false, code: 'output_dir_not_writable', message: ${jsStringLiteral('Cannot create output_dir: ' + outputDir)} };
     }
 
     try {
@@ -242,19 +244,22 @@ async function runCsvToCards(
       };
     }
 
+    var expectedOutputs = ${outputPathsLiteral};
     var outputs = [];
     for (var i = 0; i < doc.dataSets.length; i++) {
       var set = doc.dataSets[i];
       doc.activeDataSet = set;
-      var base = "${jsString(outputDir)}/" + set.name.replace(/[^a-zA-Z0-9_\\-]+/g, '_');
+      var rowIndex = /^row_(\\d+)$/.test(set.name) ? parseInt(set.name.slice(4), 10) - 1 : -1;
+      if (rowIndex < 0 || rowIndex >= expectedOutputs.length) throw new Error('invalid_dataset: unexpected imported row');
+      var output = new File(expectedOutputs[rowIndex]);
       if ('${format}' === 'PNG') {
-        doc.saveAs(new File(base + '.${ext}'), new PNGSaveOptions(), true, Extension.LOWERCASE);
+        doc.saveAs(output, new PNGSaveOptions(), true, Extension.LOWERCASE);
       } else {
         var jpg = new JPEGSaveOptions();
         jpg.quality = 10;
-        doc.saveAs(new File(base + '.${ext}'), jpg, true, Extension.LOWERCASE);
+        doc.saveAs(output, jpg, true, Extension.LOWERCASE);
       }
-      outputs.push(base + '.${ext}');
+      outputs.push(output.fsName);
     }
 
     return {
@@ -266,21 +271,22 @@ async function runCsvToCards(
         rows: ${dataRows.length},
         exported: outputs.length,
         output_paths: outputs,
-        output_dir: "${jsString(outputDir)}",
+        output_dir: ${jsStringLiteral(outputDir)},
         format: '${format}',
-        xml_path: "${jsString(xmlPath)}"
+        xml_path: ${jsStringLiteral(xmlPath)}
       }
     };
   `;
 
-  let uncertain = false;
-  try {
     writeFileSync(xmlPath, xml, 'utf8');
     const result = await executeStandaloneRecipe(connection, body);
     uncertain = JSON.stringify(result).includes('outcome_unknown');
     return result;
+  } catch (error) {
+    uncertain = String(error).includes('outcome_unknown');
+    throw error;
   } finally {
     // Keep inputs alive if Adobe could still be executing a timed-out command.
-    if (!uncertain) rmSync(temporaryDir, { recursive: true, force: true });
+    if (!uncertain) await removeLocalTempDirectory(temporaryDir);
   }
 }

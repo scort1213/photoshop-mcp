@@ -1,11 +1,12 @@
+import { toAdobePath, resolveLocalPath } from '../../utils/local-path.js';
 import { assertLocalPaths } from '../../utils/local-path.js';
 import { readdir, stat } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { extname, isAbsolute, join } from 'node:path';
 import { ToolDefinition, ToolResult } from '../../core/tool-registry.js';
-import { resolveExportPath } from '../../lib/export-paths.js';
+import { resolveGeneratedExportPath } from '../../lib/export-paths.js';
 import { PhotoshopConnection } from '../../platform/connection.js';
-import { clampInt, executeStandaloneRecipe, jsString, toolFailure } from './_shared.js';
+import { clampInt, executeStandaloneRecipe, jsStringLiteral, toolFailure } from './_shared.js';
 
 const TOOL_NAME = 'photoshop_recipe_batch_watermark';
 
@@ -100,9 +101,9 @@ async function runBatchWatermark(
   connection: PhotoshopConnection,
   args: Record<string, unknown>
 ): Promise<ToolResult> {
-  const assetsDir = typeof args.assets_dir === 'string' ? args.assets_dir.trim() : '';
+  let assetsDir = typeof args.assets_dir === 'string' ? args.assets_dir : '';
   const text = typeof args.text === 'string' ? args.text.trim() : '';
-  const logoPath = typeof args.logo_path === 'string' ? args.logo_path.trim() : '';
+  let logoPath = typeof args.logo_path === 'string' ? args.logo_path : '';
   const quality = clampInt(args.quality, 1, 12, 10);
   const opacity = clampInt(args.opacity, 0, 100, 40);
   const marginPx = clampInt(args.margin_px, 0, 10000, 24);
@@ -139,6 +140,7 @@ async function runBatchWatermark(
 
   let entries: string[];
   try {
+    assetsDir = resolveLocalPath(assetsDir);
     const dirStat = await stat(assetsDir);
     if (!dirStat.isDirectory()) {
       return toolFailure({
@@ -173,6 +175,7 @@ async function runBatchWatermark(
 
   if (logoPath && !text) {
     try {
+      logoPath = resolveLocalPath(logoPath);
       const logoStat = await stat(logoPath);
       if (!logoStat.isFile()) {
         return toolFailure({
@@ -194,8 +197,8 @@ async function runBatchWatermark(
   const stamp = Date.now() + '-' + randomBytes(4).toString('hex');
   const jobsLiteral = assets
     .map((assetPath, index) => {
-      const outPath = resolveExportPath(`wm-${baseNameWithoutExt(assetPath)}-${stamp}-${index}.jpg`, 'jpg');
-      return `{ asset: "${jsString(assetPath)}", out: "${jsString(outPath)}" }`;
+      const outPath = resolveGeneratedExportPath(`wm-${baseNameWithoutExt(assetPath)}-${stamp}-${index}.jpg`, 'jpg');
+      return `{ asset: ${jsStringLiteral(toAdobePath(assetPath))}, out: ${jsStringLiteral(toAdobePath(outPath))} }`;
     })
     .join(', ');
 
@@ -204,7 +207,7 @@ async function runBatchWatermark(
       var wmLayer = doc.artLayers.add();
       wmLayer.kind = LayerKind.TEXT;
       var ti = wmLayer.textItem;
-      ti.contents = "${jsString(text)}";
+      ti.contents = ${jsStringLiteral(text)};
       var fs = ${fontSize};
       if (fs <= 0) fs = Math.max(8, Math.round(H * 0.04));
       ti.size = new UnitValue(fs, 'px');
@@ -219,7 +222,7 @@ async function runBatchWatermark(
     `
     : `
       var placeDesc = new ActionDescriptor();
-      placeDesc.putPath(cTID('null'), new File("${jsString(logoPath)}"));
+      placeDesc.putPath(cTID('null'), new File(${jsStringLiteral(toAdobePath(logoPath))}));
       executeAction(cTID('Plc '), placeDesc, DialogModes.NO);
       var wmLayer = doc.activeLayer;
       var pb = wmLayer.bounds;

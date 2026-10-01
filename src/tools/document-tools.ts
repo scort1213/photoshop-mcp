@@ -1,8 +1,8 @@
 import { atomicSave } from '../utils/atomic-save.js';
 import { extname } from 'node:path';
-import { assertLocalPath } from '../utils/local-path.js';
-import { runWithDocumentId } from '../core/document-target.js';
-import { managedMutation } from '../platform/operation-safety.js';
+import { resolveLocalPath } from '../utils/local-path.js';
+import { getTargetDocumentId, runWithDocumentId } from '../core/document-target.js';
+import { access, managedMutation } from '../platform/operation-safety.js';
 import { ToolDefinition, ToolResult } from '../core/tool-registry.js';
 import { PhotoshopConnection } from '../platform/connection.js';
 import { PhotoshopAPIFactory } from '../api/photoshop-api.js';
@@ -138,7 +138,11 @@ export function createDocumentTools(connection: PhotoshopConnection): ToolDefini
               enum: ['PSD', 'JPEG', 'PNG'],
               default: 'PSD',
             },
-            overwrite: { type: 'boolean', default: false, description: 'Explicitly allow replacing an existing output file.' },
+            overwrite: {
+              type: 'boolean',
+              default: false,
+              description: 'Explicitly allow replacing an existing output file.',
+            },
             quality: {
               type: 'number',
               description: 'Quality for JPEG (1-12, default: 8)',
@@ -155,17 +159,28 @@ export function createDocumentTools(connection: PhotoshopConnection): ToolDefini
     {
       tool: {
         name: 'photoshop_close_document',
-        description: 'Close the active Photoshop document. Saving uses an explicit local file destination; an existing local filename is reused, otherwise provide path. No cloud-document save is invoked.',
+        description:
+          'With save=true, save a local copy and keep the document open; returns saved=true and closed=false. An existing local filename is reused, otherwise provide path. With save=false, explicitly close without saving. No automatic close or retry follows a save.',
         inputSchema: {
           type: 'object',
           properties: {
             save: {
               type: 'boolean',
-              description: 'Whether to save changes before closing',
+              description:
+                'true saves a local copy and keeps the document open; false explicitly closes without saving',
               default: false,
             },
-            path: { type: 'string', description: 'Optional absolute local save path. Required when the document has no usable local filename. PSD, PSB, JPEG, PNG and TIFF supported.' },
-            overwrite: { type: 'boolean', default: false, description: 'Allow replacing an explicit path. Saving to the current document filename already implies replacement.' },
+            path: {
+              type: 'string',
+              description:
+                'Optional absolute local save path. Required when the document has no usable local filename. PSD, PSB, JPEG, PNG and TIFF supported.',
+            },
+            overwrite: {
+              type: 'boolean',
+              default: false,
+              description:
+                'Allow replacing an explicit path. Saving to the current document filename already implies replacement.',
+            },
           },
         },
       },
@@ -228,7 +243,9 @@ async function listDocuments(connection: PhotoshopConnection): Promise<ToolResul
     const raw = await runSnippet(connection, ExtendScriptSnippets.listDocuments());
     const parsed = parseSnippetResult(raw);
     if (!parsed) {
-      return atomicFailureFromError(new Error(`Snippet returned unparseable payload: ${String(raw)}`));
+      return atomicFailureFromError(
+        new Error(`Snippet returned unparseable payload: ${String(raw)}`)
+      );
     }
 
     if (parsed.ok === false) {
@@ -296,7 +313,9 @@ async function setActiveDocument(
     const raw = await runSnippet(connection, ExtendScriptSnippets.setActiveDocument(params));
     const parsed = parseSnippetResult(raw);
     if (!parsed) {
-      return atomicFailureFromError(new Error(`Snippet returned unparseable payload: ${String(raw)}`));
+      return atomicFailureFromError(
+        new Error(`Snippet returned unparseable payload: ${String(raw)}`)
+      );
     }
 
     if (parsed.ok === false) {
@@ -325,9 +344,7 @@ async function setActiveDocument(
     }
 
     return atomicSuccess(
-      activated?.name
-        ? `Active document set to "${activated.name}"`
-        : 'Active document switched',
+      activated?.name ? `Active document set to "${activated.name}"` : 'Active document switched',
       details,
       'photoshop_get_document_info'
     );
@@ -377,11 +394,22 @@ async function saveDocument(
     const apiFactory = new PhotoshopAPIFactory(connection);
     const api = await apiFactory.createAPI();
 
-    await atomicSave(path, format.toUpperCase(), args.overwrite === true, async (temporaryPath) => {
-      const script = format === 'JPEG' ? ExtendScriptSnippets.saveAsJPEG(temporaryPath, quality)
-        : format === 'PNG' ? ExtendScriptSnippets.saveAsPNG(temporaryPath)
-        : ExtendScriptSnippets.saveAsPSD(temporaryPath);
-      return api.executeScript(script);
+    await connection.runTransaction(async () => {
+      const metadata = parseSnippetResult(
+        await access.run('read', () => api.executeScript(saveTargetMetadataScript()))
+      );
+      const id = verifiedSaveTargetId(metadata?.id);
+      await runWithDocumentId(id, () =>
+        atomicSave(path, format.toUpperCase(), args.overwrite === true, async (temporaryPath) => {
+          const script =
+            format === 'JPEG'
+              ? ExtendScriptSnippets.saveAsJPEG(temporaryPath, quality)
+              : format === 'PNG'
+                ? ExtendScriptSnippets.saveAsPNG(temporaryPath)
+                : ExtendScriptSnippets.saveAsPSD(temporaryPath);
+          return api.executeScript(script);
+        })
+      );
     });
 
     return {
@@ -405,63 +433,112 @@ async function saveDocument(
   }
 }
 
+function saveTargetMetadataScript(): string {
+  return `
+    if (app.documents.length === 0) throw new Error('No active document');
+    ${getTargetDocumentId() === undefined ? "if (app.documents.length > 1) throw new Error('ambiguous_document: supply document_id when multiple documents are open');" : ''}
+    var doc = app.activeDocument;
+    var localPath = null;
+    try { localPath = doc.fullName.fsName; } catch (ePath) {}
+    return { id: doc.id, path: localPath };
+  `;
+}
+
+function verifiedSaveTargetId(id: unknown): number {
+  if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0)
+    throw new Error('document_not_found: could not verify the document to save');
+  return id;
+}
+
 async function closeDocument(
   connection: PhotoshopConnection,
   args: Record<string, unknown>
 ): Promise<ToolResult> {
-  const save = (args.save as boolean) || false;
-
+  const save = args.save === true;
   try {
-    const apiFactory = new PhotoshopAPIFactory(connection);
-    const api = await apiFactory.createAPI();
-
-    let savedPath: string | undefined;
-    if (save) {
-      const metadata = parseSnippetResult(await api.executeScript(`
-        if (app.documents.length === 0) throw new Error('No active document');
-        var doc = app.activeDocument;
-        var localPath = null;
-        try { localPath = doc.fullName.fsName; } catch (ePath) {}
-        return { id: doc.id, path: localPath };
-      `));
-      const explicit = typeof args.path === 'string' ? args.path.trim() : '';
-      savedPath = explicit || (typeof metadata?.path === 'string' ? metadata.path : undefined);
-      if (!savedPath) throw new Error('local_path_required: provide path to save a local copy before closing; the document remains open');
-      assertLocalPath(savedPath);
-      const format = ({ '.psd': 'PSD', '.psb': 'PSB', '.jpg': 'JPEG', '.jpeg': 'JPEG', '.png': 'PNG', '.tif': 'TIFF', '.tiff': 'TIFF' } as Record<string, string>)[extname(savedPath).toLowerCase()];
-      if (!format) throw new Error('local_path_required: provide a local PSD, PSB, JPEG, PNG or TIFF path before closing; the document remains open');
-      const id = metadata?.id;
-      if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) throw new Error('document_not_found: could not verify the document to save and close');
-      await runWithDocumentId(id, async () => {
-        const isCurrentFile = typeof metadata?.path === 'string' && savedPath === metadata.path;
-        await atomicSave(savedPath!, format, !explicit || isCurrentFile || args.overwrite === true, temporaryPath => {
-          const script = format === 'JPEG' ? ExtendScriptSnippets.saveAsJPEG(temporaryPath)
-            : format === 'PNG' ? ExtendScriptSnippets.saveAsPNG(temporaryPath)
-            : format === 'PSB' ? ExtendScriptSnippets.saveAsPSB(temporaryPath)
-            : format === 'TIFF' ? ExtendScriptSnippets.saveAsTIFF(temporaryPath)
-            : ExtendScriptSnippets.saveAsPSD(temporaryPath);
-          return managedMutation.run('photoshop_save_document', () => api.executeScript(script));
-        });
-        await api.executeScript(ExtendScriptSnippets.closeDocument(false));
-      });
-    } else {
+    const api = await new PhotoshopAPIFactory(connection).createAPI();
+    if (!save) {
       await api.executeScript(ExtendScriptSnippets.closeDocument(false));
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ ok: true, saved: false, closed: true }) }],
+      };
     }
-
-    return {
-      content: [
+    return await connection.runTransaction(async () => {
+      const metadata = parseSnippetResult(
+        await access.run('read', () => api.executeScript(saveTargetMetadataScript()))
+      );
+      const explicit = typeof args.path === 'string' ? args.path : '';
+      const selectedPath = explicit || (typeof metadata?.path === 'string' ? metadata.path : '');
+      if (!selectedPath)
+        throw new Error(
+          'local_path_required: provide path to save a local copy; the document remains open'
+        );
+      const savedPath = resolveLocalPath(selectedPath);
+      let currentPath: string | undefined;
+      try {
+        if (typeof metadata?.path === 'string' && metadata.path)
+          currentPath = resolveLocalPath(metadata.path);
+      } catch {
+        /* An explicit local copy does not need a remote source destination. */
+      }
+      const format = (
         {
-          type: 'text' as const,
-          text: save ? `Document saved locally to ${savedPath} and closed` : 'Document closed without saving',
-        },
-      ],
-    };
+          '.psd': 'PSD',
+          '.psb': 'PSB',
+          '.jpg': 'JPEG',
+          '.jpeg': 'JPEG',
+          '.png': 'PNG',
+          '.tif': 'TIFF',
+          '.tiff': 'TIFF',
+        } as Record<string, string>
+      )[extname(savedPath).toLowerCase()];
+      if (!format)
+        throw new Error(
+          'local_path_required: provide a local PSD, PSB, JPEG, PNG or TIFF path; the document remains open'
+        );
+      const id = verifiedSaveTargetId(metadata?.id);
+      await runWithDocumentId(id, () =>
+        atomicSave(
+          savedPath,
+          format,
+          !explicit || savedPath === currentPath || args.overwrite === true,
+          (temporaryPath) => {
+            const script =
+              format === 'JPEG'
+                ? ExtendScriptSnippets.saveAsJPEG(temporaryPath)
+                : format === 'PNG'
+                  ? ExtendScriptSnippets.saveAsPNG(temporaryPath)
+                  : format === 'PSB'
+                    ? ExtendScriptSnippets.saveAsPSB(temporaryPath)
+                    : format === 'TIFF'
+                      ? ExtendScriptSnippets.saveAsTIFF(temporaryPath)
+                      : ExtendScriptSnippets.saveAsPSD(temporaryPath);
+            return managedMutation.run('photoshop_save_document', () => api.executeScript(script));
+          }
+        )
+      );
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              ok: true,
+              saved: true,
+              closed: false,
+              path: savedPath,
+              document_id: id,
+              message: 'Local copy saved. The document remains open.',
+            }),
+          },
+        ],
+      };
+    });
   } catch (error) {
     return {
       content: [
         {
-          type: 'text' as const,
-          text: `Error closing document: ${error instanceof Error ? error.message : String(error)}`,
+          type: 'text',
+          text: `Error saving/closing document: ${error instanceof Error ? error.message : String(error)}`,
         },
       ],
       isError: true,

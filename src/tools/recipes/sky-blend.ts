@@ -1,3 +1,4 @@
+import { toAdobePath } from '../../utils/local-path.js';
 import { ToolDefinition, ToolResult } from '../../core/tool-registry.js';
 import { PhotoshopConnection } from '../../platform/connection.js';
 import { cloudDisabledResult } from '../../core/local-policy.js';
@@ -5,7 +6,7 @@ import {
   clampInt,
   executeRecipe,
   gradientMaskAxisPercents,
-  jsString,
+  jsStringLiteral,
   toolFailure,
 } from './_shared.js';
 
@@ -77,7 +78,7 @@ async function runSkyBlend(
   args: Record<string, unknown>
 ): Promise<ToolResult> {
   if (args.use_native_sky === true) return cloudDisabledResult('use_native_sky');
-  const skyPath = typeof args.sky_image_path === 'string' ? args.sky_image_path.trim() : '';
+  const skyPath = typeof args.sky_image_path === 'string' ? args.sky_image_path : '';
   if (!skyPath) {
     return toolFailure({
       ok: false,
@@ -93,12 +94,12 @@ async function runSkyBlend(
   const startPct = Math.max(0, horizonPct - featherPct);
   const endPct = Math.min(100, horizonPct + featherPct);
   const endpoints = gradientMaskAxisPercents('top_to_bottom', startPct, endPct);
-  const escapedPath = jsString(skyPath);
+  const escapedPath = jsStringLiteral(toAdobePath(skyPath));
 
   const body = `
-    var imageFile = new File("${escapedPath}");
+    var imageFile = new File(${escapedPath});
     if (!imageFile.exists) {
-      return { ok: false, code: 'file_not_found', message: 'Image file not found: ${escapedPath}' };
+      return { ok: false, code: 'file_not_found', message: ${jsStringLiteral('Image file not found: ' + skyPath)} };
     }
 
     app.displayDialogs = DialogModes.NO;
@@ -146,7 +147,7 @@ async function runSkyBlend(
       undo_history_states_consumed: 1,
       next_suggested_tool: 'photoshop_get_preview',
       details: {
-        sky_image_path: '${escapedPath}',
+        sky_image_path: ${jsStringLiteral(skyPath)},
         layer_name: skyLayer.name,
         horizon_pct: ${horizonPct},
         feather_pct: ${featherPct},

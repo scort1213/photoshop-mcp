@@ -1,4 +1,4 @@
-import { access, documentManaged, managedMutation, operationContext } from '../platform/operation-safety.js';
+import { access, documentManaged, managedMutation, operationContext, confirmOperationBodyNotEntered } from '../platform/operation-safety.js';
 import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
@@ -7,7 +7,8 @@ import { artboardMutationGuard, ARTBOARD_SCOPED_TOOLS, ARTBOARD_GEOMETRY_TOOLS }
 import { Logger } from '../utils/logger.js';
 import { PhotoshopConnection } from '../platform/connection.js';
 import { documentGuardScript, getTargetDocumentId } from '../core/document-target.js';
-import { assertLocalPath } from '../utils/local-path.js';
+import { assertLocalPath, toAdobePath } from '../utils/local-path.js';
+import { jsValueLiteral } from '../utils/js-string.js';
 
 export type APIType = 'UXP' | 'ExtendScript';
 
@@ -112,14 +113,15 @@ class ExtendScriptPhotoshopAPI implements PhotoshopAPI {
       assertLocalPath(root);
       await mkdir(root, { recursive: true });
       timeoutMs = timeoutMs ?? 120000;
-      preparation = 'var __mcpArtboardOperation = ' + JSON.stringify({ tool, args: operationContext.getStore()?.args || {},
-        backup: join(root, randomUUID() + '.psb'), deadline: Date.now() + timeoutMs }) + ';\n';
+      preparation = 'var __mcpArtboardOperation = ' + jsValueLiteral({ tool, args: operationContext.getStore()?.args || {},
+        backup: toAdobePath(join(root, randomUUID() + '.psb')), deadline: Date.now() + timeoutMs }) + ';\n';
     }
     const wrappedScript = this.wrapInErrorHandling(script, preflightMarker, preparation);
     const result = await this.connection.executeScript(wrappedScript, timeoutMs);
     // A normal bridge completion proves the body was never entered. Let the
     // executor finish its lease before surfacing this definite rejection.
     if (typeof result === 'string' && result.startsWith(preflightMarker)) {
+      confirmOperationBodyNotEntered();
       throw new Error(result.slice(preflightMarker.length));
     }
     if (result && typeof result === 'object' && '__mcpRecoveryResult' in result) {

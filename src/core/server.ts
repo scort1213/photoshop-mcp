@@ -1,5 +1,5 @@
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
-import { access, acquireLease, clearQuarantine, documentManaged, managedMutation, operationContext } from '../platform/operation-safety.js';
+import { access, assertOperationActive, runRecoveryOperation, clearQuarantine, documentManaged, managedMutation, operationContext } from '../platform/operation-safety.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -35,7 +35,7 @@ import { createLayerOrderingTools } from '../tools/layer-ordering-tools.js';
 import { createStateTools } from '../tools/state-tools.js';
 import { createRecipeTools } from '../tools/recipes/index.js';
 import { CLOUD_DISABLED_TOOLS, disabledCloudOption } from './local-policy.js';
-import { assertFixedToolPaths, withLocalPathContext } from '../utils/local-path.js';
+import { assertFixedToolPaths, withLocalPathContext, validateRuntimePaths } from '../utils/local-path.js';
 import { createStyleTools } from '../tools/style-tools.js';
 import { createColorAdjustmentTools } from '../tools/color-adjustment-tools.js';
 import { createDataTools } from '../tools/data-tools.js';
@@ -117,11 +117,13 @@ export class PhotoshopMCPServer {
       tool: { name: 'photoshop_recover_connection', description: 'After an outcome_unknown error, inspect document state and acknowledge partial changes. Does not undo or retry operations. Refuses recovery while any call is still running.', inputSchema: { type: 'object', properties: { acknowledge: { type: 'boolean' } }, required: ['acknowledge'] } },
       handler: async (args) => {
         if (args.acknowledge !== true) throw new Error('invalid_argument: acknowledge must be true after inspecting state');
-        const state = await this.toolRegistry.execute('photoshop_get_state', {});
-        if (state.isError) return state;
-        const lease = await acquireLease(Date.now() + 1000);
-        try { await clearQuarantine(); } finally { await lease.release(); }
-        return { content: [{ type: 'text', text: 'Recovery acknowledged. No operation was retried.' }, ...state.content] };
+        return runRecoveryOperation(async () => {
+          const state = await this.toolRegistry.execute('photoshop_get_state', {});
+          if (state.isError) return state;
+          assertOperationActive();
+          await clearQuarantine();
+          return { content: [{ type: 'text', text: 'Recovery acknowledged. No operation was retried.' }, ...state.content] };
+        }, 10000);
       },
     });
     this.registerToolDefinition({
@@ -280,6 +282,7 @@ export class PhotoshopMCPServer {
   }
 
   async start() {
+    validateRuntimePaths();
     this.server.oninitialized = () => {
       onMcpClientConnected(this.server.getClientVersion());
     };

@@ -1,3 +1,4 @@
+import { jsStringLiteral } from '../../utils/js-string.js';
 import type { ToolResult } from '../../core/tool-registry.js';
 import type { PhotoshopConnection } from '../../platform/connection.js';
 import {
@@ -185,7 +186,6 @@ const VERIFY_RECIPE_RESULT = `
 `;
 
 export function wrapInSuspendHistory(historyName: string, body: string): string {
-  const escapedName = historyName.replace(/"/g, '\\"');
   return `
     ${RECIPE_ACTION_HELPERS}
     ${EXTENDSCRIPT_JSON_HELPER}
@@ -198,7 +198,7 @@ export function wrapInSuspendHistory(historyName: string, body: string): string 
       ${body}
     };
     __mcp_recipe_doc.suspendHistory(
-      "${escapedName}",
+      ${jsStringLiteral(historyName)},
       "try { __mcp_recipe_result = __mcp_recipe_fn(); } catch (eRecipe) { __mcp_recipe_result = { ok: false, code: 'recipe_runtime_error', message: eRecipe.message || String(eRecipe) }; }"
     );
     if (!__mcp_recipe_result) {
@@ -340,7 +340,7 @@ export function clampInt(value: unknown, min: number, max: number, fallback: num
   return Math.max(min, Math.min(max, Math.round(value)));
 }
 
-export { jsString } from '../../utils/js-string.js';
+export { jsString, jsStringLiteral } from '../../utils/js-string.js';
 
 export function gradientMaskAxisPercents(
   direction: GradientMaskDirection,

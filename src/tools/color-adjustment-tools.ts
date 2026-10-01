@@ -19,7 +19,7 @@ export function createColorAdjustmentTools(connection: PhotoshopConnection): Too
       tool: {
         name: 'photoshop_apply_lut',
         description:
-          'Apply a Color Lookup (3D LUT) adjustment layer for cinematic color grading. Accepts a built-in LUT name (e.g. "Crisp_Warm.3dl", "Kodak 5218 Fuji 3510.3dl", "Moonlight.3dl") or an absolute path to a .cube/.3dl/.look file.\n\n' +
+          'Apply a Color Lookup (3D LUT) adjustment layer for cinematic color grading. Requires a native absolute path to a local .cube/.3dl/.look file.\n\n' +
           'Users often say: cinematic grade, film look, teal and orange, apply LUT, sinematik renk.\n\n' +
           'Use when: stylistic non-destructive color grade in one step.\n' +
           'Do NOT use when: basic tonal fixes — use photoshop_adjust_curves or photoshop_auto_levels.\n\n' +
@@ -31,7 +31,7 @@ export function createColorAdjustmentTools(connection: PhotoshopConnection): Too
             lut: {
               type: 'string',
               description:
-                'Built-in LUT file name (e.g. "Crisp_Warm.3dl") or absolute path to a .cube/.3dl/.look file',
+                'Native absolute path to a local .cube/.3dl/.look file',
             },
           },
           required: ['lut'],

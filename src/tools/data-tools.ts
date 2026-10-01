@@ -1,8 +1,10 @@
 import { ToolDefinition, ToolResult } from '../core/tool-registry.js';
 import { PhotoshopConnection } from '../platform/connection.js';
 import { ExtendScriptSnippets } from '../api/extendscript.js';
-import { readFile } from 'node:fs/promises';
-import { assertLocalPath, assertLocalDatasetReferences } from '../utils/local-path.js';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { resolveLocalPath, normalizeDatasetXml } from '../utils/local-path.js';
+import { createLocalTempDirectory, removeLocalTempDirectory } from '../utils/local-temp.js';
 import {
   atomicFailureFromError,
   atomicSuccess,
@@ -93,22 +95,31 @@ async function importDataSets(
   connection: PhotoshopConnection,
   args: Record<string, unknown>
 ): Promise<ToolResult> {
-  const xmlPath = typeof args.xml_path === 'string' ? args.xml_path.trim() : '';
+  const xmlPath = typeof args.xml_path === 'string' ? args.xml_path : '';
   if (!xmlPath) {
     return atomicFailureFromError(new Error('xml_path parameter is required'));
   }
+  let directory: string | undefined;
+  let uncertain = false;
   try {
-    assertLocalPath(xmlPath);
-    assertLocalDatasetReferences(await readFile(xmlPath, 'utf8'), xmlPath);
-    const raw = await runSnippet(connection, ExtendScriptSnippets.importDataSets(xmlPath));
+    const source = resolveLocalPath(xmlPath);
+    const xml = normalizeDatasetXml(await readFile(source, 'utf8'), source);
+    directory = await createLocalTempDirectory('datasets-');
+    const prepared = resolveLocalPath(join(directory, 'variables.xml'));
+    await writeFile(prepared, xml, 'utf8');
+    const raw = await runSnippet(connection, ExtendScriptSnippets.importDataSets(prepared));
     const parsed = parseSnippetResult(raw);
     if (!parsed) {
       return atomicFailureFromError(new Error(`Unparseable import result: ${String(raw)}`));
     }
     const count = typeof parsed.count === 'number' ? parsed.count : 0;
-    return atomicSuccess(`Imported ${count} data set(s)`, parsed, 'photoshop_generate_from_datasets');
+    return atomicSuccess(`Imported ${count} data set(s)`, { ...parsed, xml_path: source }, 'photoshop_generate_from_datasets');
   } catch (error) {
-    return atomicFailureFromError(error);
+    uncertain = String(error).includes('outcome_unknown');
+    return atomicFailureFromError(uncertain && directory
+      ? new Error(String(error) + '; inspect temporary files: ' + directory) : error);
+  } finally {
+    if (directory && !uncertain) await removeLocalTempDirectory(directory);
   }
 }
 
@@ -116,7 +127,7 @@ async function generateFromDataSets(
   connection: PhotoshopConnection,
   args: Record<string, unknown>
 ): Promise<ToolResult> {
-  const outputDir = typeof args.output_dir === 'string' ? args.output_dir.trim() : '';
+  const outputDir = typeof args.output_dir === 'string' ? args.output_dir : '';
   if (!outputDir) {
     return atomicFailureFromError(new Error('output_dir parameter is required'));
   }

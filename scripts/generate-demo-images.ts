@@ -1,6 +1,6 @@
 /**
  * Generate real demo outputs for the README's new recipes (split_carousel,
- * batch_watermark, passport_photo) and smoke-test the neural `colorize` filter.
+ * batch_watermark, passport_photo) using local operations only.
  *
  * Requires: Photoshop running (PS 23+; UXP bridge plugin loaded for colorize).
  * Sample assets are painted synthetically inside Photoshop — no external files.
@@ -15,7 +15,6 @@ import { join } from 'node:path';
 import { Session } from '../src/core/session.js';
 import { PhotoshopAPIFactory } from '../src/api/photoshop-api.js';
 import { createRecipeTools } from '../src/tools/recipes/index.js';
-import { invokeNeuralFilter } from '../src/platform/uxp-bridge-client.js';
 import type { ToolResult } from '../src/core/tool-registry.js';
 
 const IMAGES_DIR = join(process.cwd(), 'images');
@@ -173,28 +172,6 @@ async function main() {
     passport.ok
       ? `  ✓ passport_photo → ${passportCopied.join(', ') || '(outputs in exports dir)'}`
       : `  ✗ passport_photo failed (expected if Select Subject rejects synthetic silhouettes): ${passport.message}`
-  );
-  await api.executeScript(
-    `try { app.activeDocument.close(SaveOptions.DONOTSAVECHANGES); } catch (e) {} return 'ok';`
-  );
-
-  // ── 4) Neural colorize descriptor smoke test (needs UXP bridge plugin) ──────
-  console.log('• Neural colorize descriptor check (UXP bridge)…');
-  await api.executeScript(`
-    var doc = app.documents.add(UnitValue(800, 'px'), UnitValue(600, 'px'), 72,
-      'mcp-demo-bw', NewDocumentMode.RGB, DocumentFill.WHITE);
-    var g = new SolidColor();
-    g.rgb.red = 128; g.rgb.green = 128; g.rgb.blue = 128;
-    doc.selection.selectAll();
-    doc.selection.fill(g);
-    doc.selection.deselect();
-    return 'ok';
-  `);
-  const colorize = await invokeNeuralFilter('colorize', {});
-  console.log(
-    colorize.ok
-      ? '  ✓ colorize descriptor accepted by batchPlay'
-      : `  ✗ colorize failed: ${colorize.error} — capture the real descriptor name via Scripting Listener and fix uxp-plugin/main.js`
   );
   await api.executeScript(
     `try { app.activeDocument.close(SaveOptions.DONOTSAVECHANGES); } catch (e) {} return 'ok';`

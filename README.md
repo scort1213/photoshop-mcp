@@ -46,6 +46,10 @@ For Select Subject, automatic background removal and passport photos, first set 
 
 Custom scripts and recorded actions remain flexible, trusted code. Instructions prohibit cloud/network/login operations, but there is no script sandbox or enforcement parser. Adobe's own licensing/background processes and your AI client's model processing are outside this project's guarantee.
 
+Fixed tools take real local absolute paths; relative paths, `~`, aliases and shortcuts are rejected. Normal Unicode, quotes, spaces and percent signs in filenames work. Default exports still go to the local MCP exports folder.
+
+`photoshop_close_document({save:true})` now saves and keeps the document open. Its result explicitly says `saved:true, closed:false`; closing is a separate user decision. Timeouts never trigger an automatic retry.
+
 ## Validation
 
 ```sh
