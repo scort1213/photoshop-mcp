@@ -2,7 +2,7 @@
  * Generate real demo outputs for the README's new recipes (split_carousel,
  * batch_watermark, passport_photo) using local operations only.
  *
- * Requires: Photoshop running (PS 23+; UXP bridge plugin loaded for colorize).
+ * Requires: Photoshop running (PS 23+).
  * Sample assets are painted synthetically inside Photoshop — no external files.
  *
  * Run: npx tsx scripts/generate-demo-images.ts

@@ -1010,7 +1010,7 @@ photoshop_apply_layer_style({ style: "drop_shadow", opacity: 55, size: 14, dista
 Color Lookup (3D LUT) adjustment layer — cinematic grades in one step.
 
 **Parameters:**
-- `lut` (string, required): Built-in LUT name (e.g. `"Crisp_Warm.3dl"`, `"Kodak 5218 Fuji 3510.3dl"`, `"Moonlight.3dl"`) or absolute path to a `.cube`/`.3dl`/`.look` file
+- `lut` (string, required): Native absolute local path to an existing `.cube`/`.3dl`/`.look` file
 
 ```javascript
 photoshop_apply_lut({ lut: "/absolute/local/path/Crisp_Warm.3dl" })
