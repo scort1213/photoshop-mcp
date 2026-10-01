@@ -3,13 +3,17 @@ import { mkdir, readFile, writeFile, unlink, open, stat } from 'node:fs/promises
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { assertLocalPath } from '../utils/local-path.js';
 
 export const documentManaged = new AsyncLocalStorage<boolean>();
 export const managedMutation = new AsyncLocalStorage<boolean | string>();
 export const operationContext = new AsyncLocalStorage<{ args: Record<string, unknown>; recoveryBackup?: string }>();
 export const access = new AsyncLocalStorage<'read' | 'write'>();
-export const safetyRoot = () =>
-  process.env.PHOTOSHOP_SAFETY_DIR || join(tmpdir(), 'photoshop-mcp-safety');
+export const safetyRoot = () => {
+  const root = process.env.PHOTOSHOP_SAFETY_DIR || join(tmpdir(), 'photoshop-mcp-safety');
+  assertLocalPath(root);
+  return root;
+};
 const alive = (pid: number) => {
   try {
     process.kill(pid, 0);

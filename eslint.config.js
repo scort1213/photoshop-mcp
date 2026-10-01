@@ -42,6 +42,15 @@ export default [
     },
   },
   {
-    ignores: ['dist/**', 'node_modules/**'],
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      'src/ui/agent/**',
+      'src/ui/providers/**',
+      'src/ui/store/**',
+      'src/ui/agent.ts',
+      'src/ui/config.ts',
+      'src/ui/security/**',
+    ],
   },
 ];

@@ -2,6 +2,7 @@
  * Neural Filter MCP tool (UXP bridge lane).
  * See docs/plans/2026-07-03-1149-photoshop-ai-features/pai-phase-5.0-uxp-bridge.md.
  */
+import { cloudDisabledResult } from '../core/local-policy.js';
 import type { ToolDefinition, ToolResult } from '../core/tool-registry.js';
 import { resolvePhotoshopCapabilities } from '../platform/capabilities.js';
 import type { PhotoshopConnection } from '../platform/connection.js';
@@ -23,7 +24,7 @@ function clampPct(value: unknown, fallback: number): number {
 }
 
 export function createNeuralTools(connection: PhotoshopConnection): ToolDefinition[] {
-  return [
+  const definitions: ToolDefinition[] = [
     {
       tool: {
         name: 'photoshop_neural_filter',
@@ -66,6 +67,7 @@ export function createNeuralTools(connection: PhotoshopConnection): ToolDefiniti
       handler: async (args) => runNeuralFilter(connection, args),
     },
   ];
+  return definitions.map((definition) => ({ ...definition, handler: async () => cloudDisabledResult(definition.tool.name) }));
 }
 
 async function runNeuralFilter(

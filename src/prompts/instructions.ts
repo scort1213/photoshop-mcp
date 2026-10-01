@@ -1,17 +1,20 @@
 /**
- * Server-level guidance for host LLMs (Cursor, Claude Desktop, standalone UI).
+ * Server-level guidance for host LLMs using this local MCP build.
  * Advertised on MCP `initialize` via ServerOptions.instructions.
  */
+import { LOCAL_ONLY_GUIDANCE } from './local-only-guidance.js';
+
 export const PHOTOSHOP_MCP_INSTRUCTIONS = `
 Photoshop tools (photoshop-mcp server)
 =====================================
 
+${LOCAL_ONLY_GUIDANCE}
+
 Session bootstrap
 - Call \`photoshop_ping\` exactly once at the start of a session to verify the
   connection. Do not repeat it on every turn.
-- Before suggesting AI-powered features (Generative Fill, Generative Upscale,
-  Select Subject v2, neural filters, etc.), call \`photoshop_get_capabilities\`
-  once to learn which features the user's installed Photoshop version exposes.
+- Call \`photoshop_get_capabilities\` once to learn the local operations
+  available in this build. Hardware/software support does not enable blocked cloud tools.
 
 State before action
 - Before any tool that needs an active document or active layer, call
@@ -70,9 +73,10 @@ Error recovery contract
   - \`no_active_layer\` / \`layer_not_found\` — list layers with
     \`photoshop_get_layers\`, then act on a specific name.
   - \`selection_required\` — make a selection before reusing the failed tool.
-  - \`version_unsupported\` / \`generative_unavailable\` — degrade gracefully
-    to a non-generative alternative; tell the user once which feature is
-    missing.
+  - \`version_unsupported\` / \`cloud_disabled\` — use a local alternative.
+    Never request a login, credits, or a cloud fallback.
+  - \`local_path_required\` / \`non_local_path\` — choose a file on a local disk;
+    do not download a remote resource or save to a cloud document.
 
 Multi-step etiquette
 - After every tool result, decide: continue with the next planned tool, or
@@ -86,14 +90,14 @@ User intent glossary
 - Map colloquial phrases to the primary tool below.
 - bg.remove — "remove background", "cut out", "isolate subject", "transparent
   background", "arka planı sil" → \`photoshop_recipe_remove_background\`
-- obj.remove — "remove that person", "erase distraction", "generative remove"
-  → \`photoshop_generative_remove\` first; fallback
-  \`photoshop_recipe_remove_distraction\` (content-aware) after manual selection
+- obj.remove — "remove that person", "erase distraction"
+  → \`photoshop_recipe_remove_distraction\` (local content-aware fill) after selection.
+  Explain that generative removal is disabled if the user specifically requests it.
 - mask.gradient_fade — "fade into background", "gradient mask", "blend subject"
   → \`photoshop_recipe_gradient_fade\`; guide \`ps.gradient_blend\` for atomic chain
 - sky.replace — "replace sky", "fix blown sky", "better clouds" →
-  \`photoshop_sky_replacement\` when \`sky_replacement_native\`; else
-  \`photoshop_recipe_sky_blend\`; guide \`ps.composite_blend\` for manual composite
+  \`photoshop_recipe_sky_blend\` with a local sky image;
+  guide \`ps.composite_blend\` for manual composite
 - portrait.enhance — "smooth skin", "retouch portrait", "fix blemishes" →
   \`photoshop_recipe_enhance_portrait\`
 - portrait.freq_sep — "frequency separation", "split texture and color" →
@@ -119,18 +123,15 @@ User intent glossary
   → \`photoshop_recipe_csv_to_cards\`; prompt \`ps.csv_to_cards\`
 
 Degrade paths
-- Generative remove / distraction — prefer \`photoshop_generative_remove\`; degrade to
-  \`photoshop_recipe_remove_distraction\` or \`photoshop_content_aware_fill\` when
-  \`generative_unavailable\` or \`generative_credits_exhausted\`.
-- Sky replacement — prefer \`photoshop_sky_replacement\`; degrade:
-  \`photoshop_recipe_sky_blend\` when a sky file path is available;
-  otherwise \`photoshop_place_image\` + mask workflow or guide \`ps.composite_blend\`.
-- Neural skin / harmonize — \`photoshop_neural_filter\` when \`neural_filters\` is true;
-  else frequency separation / manual recipes.
-- Select Subject v2 missing — \`photoshop_recipe_remove_background\` returns
-  \`version_unsupported\` → manual selection tools + \`photoshop_create_layer_mask\`.
+- Distraction removal — use \`photoshop_recipe_remove_distraction\` or
+  \`photoshop_content_aware_fill\`. Refine the selection if needed; never try Firefly.
+- Sky replacement — use \`photoshop_recipe_sky_blend\` with a local sky file;
+  otherwise use an existing local image and a mask, or explain which asset is needed.
+- Skin smoothing — use frequency separation or local portrait retouch recipes.
+- Select Subject requires Device processing. If it is unavailable or the setting
+  is unconfirmed, use manual selection tools + \`photoshop_create_layer_mask\`.
 - Curves unavailable — use \`photoshop_auto_levels\` then
-  \`photoshop_adjust_brightness_contrast\` before retrying stronger edits.
+  \`photoshop_adjust_brightness_contrast\` before retrying stronger local edits.
 
 Disambiguation
 - "gradient" — prefer linear gradient **on a layer mask** (blend/fade); not a
@@ -151,8 +152,7 @@ Guide prompts (MCP prompts/get)
   \`ps.passport_photo\`, \`ps.csv_to_cards\`
 - Guide prompts (no recipe pair): \`ps.gradient_blend\` — fade via mask gradient;
   \`ps.color_correct\` — tone / contrast fix chain; \`ps.dodge_burn_guide\` — 50% gray
-  overlay setup; \`ps.composite_blend\` — place asset + mask + blend mode;
-  \`ps.generative_fill\`, \`ps.generative_remove\`, \`ps.generative_expand\` — Firefly workflows
+  overlay setup; \`ps.composite_blend\` — place local asset + mask + blend mode
 `.trim();
 
 export function buildPhotoshopInstructions(): string {

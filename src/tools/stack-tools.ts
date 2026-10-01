@@ -27,7 +27,7 @@ export function createStackTools(connection: PhotoshopConnection): ToolDefinitio
           'Load 2+ image files into one document, convert to a smart object and apply a stack mode (mean/median/max/min/...). Classic "remove tourists from N shots" or noise reduction — no generative AI involved.\n\n' +
           'Users often say: remove tourists, median stack, average these photos, noise stack, turistleri sil.\n\n' +
           'Use when: the user has multiple aligned shots of the same scene and wants a statistical blend.\n' +
-          'Do NOT use when: removing a single object from one photo — use photoshop_generative_remove or photoshop_content_aware_fill.\n\n' +
+          'Do NOT use when: removing a single object from one photo — use photoshop_content_aware_fill or photoshop_recipe_remove_distraction.\n\n' +
           'Returns: JSON { ok, summary, details: { file_count, mode, layer_name } }.\n' +
           'Preconditions: 2+ existing image files. Side effects: opens the files; the stacked result becomes the active document.',
         inputSchema: {

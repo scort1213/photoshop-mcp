@@ -1,5 +1,6 @@
 import { Tool, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { Logger } from '../utils/logger.js';
+import { CLOUD_DISABLED_TOOLS, cloudDisabledResult } from './local-policy.js';
 
 export interface ToolHandler {
   (args: Record<string, unknown>): Promise<CallToolResult>;
@@ -22,6 +23,7 @@ export class ToolRegistry {
   }
 
   register(name: string, definition: ToolDefinition): void {
+    if (CLOUD_DISABLED_TOOLS.has(name)) return;
     if (this.tools.has(name)) {
       this.logger.warn(`Tool '${name}' already registered, overwriting`);
     }
@@ -51,6 +53,7 @@ export class ToolRegistry {
   }
 
   async execute(name: string, args: Record<string, unknown>): Promise<ToolResult> {
+    if (CLOUD_DISABLED_TOOLS.has(name)) return cloudDisabledResult(name);
     const definition = this.tools.get(name);
     
     if (!definition) {

@@ -1,4 +1,8 @@
 import { atomicSave } from '../utils/atomic-save.js';
+import { extname } from 'node:path';
+import { assertLocalPath } from '../utils/local-path.js';
+import { runWithDocumentId } from '../core/document-target.js';
+import { managedMutation } from '../platform/operation-safety.js';
 import { ToolDefinition, ToolResult } from '../core/tool-registry.js';
 import { PhotoshopConnection } from '../platform/connection.js';
 import { PhotoshopAPIFactory } from '../api/photoshop-api.js';
@@ -151,7 +155,7 @@ export function createDocumentTools(connection: PhotoshopConnection): ToolDefini
     {
       tool: {
         name: 'photoshop_close_document',
-        description: 'Close the active Photoshop document',
+        description: 'Close the active Photoshop document. Saving uses an explicit local file destination; an existing local filename is reused, otherwise provide path. No cloud-document save is invoked.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -160,6 +164,8 @@ export function createDocumentTools(connection: PhotoshopConnection): ToolDefini
               description: 'Whether to save changes before closing',
               default: false,
             },
+            path: { type: 'string', description: 'Optional absolute local save path. Required when the document has no usable local filename. PSD, PSB, JPEG, PNG and TIFF supported.' },
+            overwrite: { type: 'boolean', default: false, description: 'Allow replacing an explicit path. Saving to the current document filename already implies replacement.' },
           },
         },
       },
@@ -409,14 +415,44 @@ async function closeDocument(
     const apiFactory = new PhotoshopAPIFactory(connection);
     const api = await apiFactory.createAPI();
 
-    const script = ExtendScriptSnippets.closeDocument(save);
-    await api.executeScript(script);
+    let savedPath: string | undefined;
+    if (save) {
+      const metadata = parseSnippetResult(await api.executeScript(`
+        if (app.documents.length === 0) throw new Error('No active document');
+        var doc = app.activeDocument;
+        var localPath = null;
+        try { localPath = doc.fullName.fsName; } catch (ePath) {}
+        return { id: doc.id, path: localPath };
+      `));
+      const explicit = typeof args.path === 'string' ? args.path.trim() : '';
+      savedPath = explicit || (typeof metadata?.path === 'string' ? metadata.path : undefined);
+      if (!savedPath) throw new Error('local_path_required: provide path to save a local copy before closing; the document remains open');
+      assertLocalPath(savedPath);
+      const format = ({ '.psd': 'PSD', '.psb': 'PSB', '.jpg': 'JPEG', '.jpeg': 'JPEG', '.png': 'PNG', '.tif': 'TIFF', '.tiff': 'TIFF' } as Record<string, string>)[extname(savedPath).toLowerCase()];
+      if (!format) throw new Error('local_path_required: provide a local PSD, PSB, JPEG, PNG or TIFF path before closing; the document remains open');
+      const id = metadata?.id;
+      if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) throw new Error('document_not_found: could not verify the document to save and close');
+      await runWithDocumentId(id, async () => {
+        const isCurrentFile = typeof metadata?.path === 'string' && savedPath === metadata.path;
+        await atomicSave(savedPath!, format, !explicit || isCurrentFile || args.overwrite === true, temporaryPath => {
+          const script = format === 'JPEG' ? ExtendScriptSnippets.saveAsJPEG(temporaryPath)
+            : format === 'PNG' ? ExtendScriptSnippets.saveAsPNG(temporaryPath)
+            : format === 'PSB' ? ExtendScriptSnippets.saveAsPSB(temporaryPath)
+            : format === 'TIFF' ? ExtendScriptSnippets.saveAsTIFF(temporaryPath)
+            : ExtendScriptSnippets.saveAsPSD(temporaryPath);
+          return managedMutation.run('photoshop_save_document', () => api.executeScript(script));
+        });
+        await api.executeScript(ExtendScriptSnippets.closeDocument(false));
+      });
+    } else {
+      await api.executeScript(ExtendScriptSnippets.closeDocument(false));
+    }
 
     return {
       content: [
         {
           type: 'text' as const,
-          text: save ? 'Document closed and saved' : 'Document closed without saving',
+          text: save ? `Document saved locally to ${savedPath} and closed` : 'Document closed without saving',
         },
       ],
     };

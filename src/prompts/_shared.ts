@@ -1,4 +1,5 @@
 import type { GetPromptResult, PromptArgument } from '@modelcontextprotocol/sdk/types.js';
+import { LOCAL_ONLY_GUIDANCE } from './local-only-guidance.js';
 
 export function argString(args: Record<string, string>, key: string, defaultValue: string): string {
   const raw = args[key];
@@ -47,7 +48,7 @@ export function argList(args: Record<string, string>, key: string, defaultValue:
 export function userPrompt(description: string, text: string): GetPromptResult {
   return {
     description,
-    messages: [{ role: 'user', content: { type: 'text', text } }],
+    messages: [{ role: 'user', content: { type: 'text', text: `${LOCAL_ONLY_GUIDANCE}\n\n${text}` } }],
   };
 }
 

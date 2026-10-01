@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { CLOUD_DISABLED_TOOLS } from '../src/core/local-policy.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TOOLS_DIR = join(ROOT, 'src', 'tools');
@@ -81,6 +82,7 @@ function listToolFiles(): string[] {
       }
     }
   }
+  files.push(join(ROOT, 'src/core/server.ts'));
   return files.sort();
 }
 
@@ -207,7 +209,7 @@ function main(): void {
   const seen = new Set<string>();
   for (const f of listToolFiles()) {
     for (const t of extractTools(f)) {
-      if (seen.has(t.name)) continue;
+      if (seen.has(t.name) || CLOUD_DISABLED_TOOLS.has(t.name)) continue;
       seen.add(t.name);
       tools.push(t);
     }

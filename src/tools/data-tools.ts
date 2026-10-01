@@ -1,6 +1,8 @@
 import { ToolDefinition, ToolResult } from '../core/tool-registry.js';
 import { PhotoshopConnection } from '../platform/connection.js';
 import { ExtendScriptSnippets } from '../api/extendscript.js';
+import { readFile } from 'node:fs/promises';
+import { assertLocalPath, assertLocalDatasetReferences } from '../utils/local-path.js';
 import {
   atomicFailureFromError,
   atomicSuccess,
@@ -96,6 +98,8 @@ async function importDataSets(
     return atomicFailureFromError(new Error('xml_path parameter is required'));
   }
   try {
+    assertLocalPath(xmlPath);
+    assertLocalDatasetReferences(await readFile(xmlPath, 'utf8'), xmlPath);
     const raw = await runSnippet(connection, ExtendScriptSnippets.importDataSets(xmlPath));
     const parsed = parseSnippetResult(raw);
     if (!parsed) {

@@ -2,6 +2,7 @@
  * Firefly generative MCP tools (ExtendScript lane).
  * See docs/plans/2026-07-03-1149-photoshop-ai-features/pai-phase-2.0-generative-core.md.
  */
+import { cloudDisabledResult } from '../core/local-policy.js';
 import type { ToolDefinition, ToolResult } from '../core/tool-registry.js';
 import type { PhotoshopConnection } from '../platform/connection.js';
 import {
@@ -20,7 +21,7 @@ function clampFeather(value: unknown): number {
 }
 
 export function createGenerativeTools(connection: PhotoshopConnection): ToolDefinition[] {
-  return [
+  const definitions: ToolDefinition[] = [
     {
       tool: {
         name: 'photoshop_generative_fill',
@@ -165,6 +166,7 @@ export function createGenerativeTools(connection: PhotoshopConnection): ToolDefi
       handler: async (args) => generateImage(connection, args),
     },
   ];
+  return definitions.map((definition) => ({ ...definition, handler: async () => cloudDisabledResult(definition.tool.name) }));
 }
 
 async function generativeFill(

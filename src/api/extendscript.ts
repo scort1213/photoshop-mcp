@@ -4,7 +4,6 @@
  */
 
 import { jsString, jsStringLiteral } from '../utils/js-string.js';
-import { artboardMutationGuard } from '../core/artboard-guard.js';
 import { gradientAngleCoordinates } from '../utils/gradient-angle.js';
 
 /** Avoid preference-driven substitutions while retaining the user's preference. */
@@ -790,6 +789,22 @@ export const ExtendScriptSnippets = {
     return { path: saveFile.fsName };
   `,
 
+  saveAsPSB: (path: string) => `
+    if (app.documents.length === 0) throw new Error('No active document');
+    var file = new File(${jsStringLiteral(path)});
+    app.activeDocument.saveAs(file, new LargeDocumentFormatSaveOptions(), true);
+    return { path: file.fsName };
+  `,
+
+  saveAsTIFF: (path: string) => `
+    if (app.documents.length === 0) throw new Error('No active document');
+    var file = new File(${jsStringLiteral(path)});
+    var options = new TiffSaveOptions();
+    options.layers = true;
+    app.activeDocument.saveAs(file, options, true);
+    return { path: file.fsName };
+  `,
+
   /**
    * Close active document
    */
@@ -798,18 +813,7 @@ export const ExtendScriptSnippets = {
       throw new Error('No active document');
     }
     var doc = app.activeDocument;
-    ${save ? `
-    var __mcpArtboardAllowed = true;
-    ${artboardMutationGuard}
-    if (__mcpArtboardScope) {
-      try {
-        __mcpArtboardScope.begin();
-        doc.save();
-      } finally { __mcpArtboardScope.restore(); }
-      __mcpArtboardScope.verify();
-      doc.close(SaveOptions.DONOTSAVECHANGES);
-    } else { doc.close(SaveOptions.SAVECHANGES); }
-    ` : 'doc.close(SaveOptions.DONOTSAVECHANGES);'}
+    ${save ? "throw new Error('local_path_required: save to an explicit local file before closing');" : 'doc.close(SaveOptions.DONOTSAVECHANGES);'}
     return { closed: true };
   `,
 

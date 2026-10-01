@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, normalize, relative, resolve } from 'node:path';
+import { assertLocalPath } from '../utils/local-path.js';
 
 const EXPORTS_SUBDIR = 'exports';
 
@@ -18,12 +19,13 @@ export function sanitizeExportChatSegment(raw: string | undefined | null): strin
 
 export function getPhotoshopMcpHomeDir(): string {
   const env = process.env.PHOTOSHOP_MCP_HOME?.trim();
-  if (env) return env;
+  if (env) { assertLocalPath(env); return env; }
   return join(homedir(), '.photoshop-mcp');
 }
 
 export function getPhotoshopExportsDir(): string {
   const dir = join(getPhotoshopMcpHomeDir(), EXPORTS_SUBDIR);
+  assertLocalPath(dir);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   return dir;
 }
@@ -33,6 +35,7 @@ export function getPhotoshopExportsWorkingDir(): string {
   const seg = sanitizeExportChatSegment(process.env[PHOTOSHOP_EXPORT_CHAT_ID_ENV]);
   if (!seg) return root;
   const dir = join(root, seg);
+  assertLocalPath(dir);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   return dir;
 }
@@ -54,6 +57,7 @@ function assertResolvedUnderExports(exportsDir: string, resolved: string): void 
  * ~/.photoshop-mcp/exports (or ~/.photoshop-mcp/exports/<chatId> in UI mode).
  */
 export function resolveExportPath(userPath: string | undefined, ext: string): string {
+  if (userPath?.trim()) assertLocalPath(userPath);
   const exportsDir = getPhotoshopExportsWorkingDir();
   const dotExt = `.${normalizeExt(ext)}`;
 

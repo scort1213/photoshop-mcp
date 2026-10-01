@@ -1,127 +1,72 @@
-import { captureBetaChatTurn } from './beta-telemetry.js';
-import { getAppVersion } from './app-version.js';
-import { hasAnalyticsKey, resolveRybbitAnalyticsHost, resolveRybbitSiteId } from './config.js';
-import { buildPersonIdentifyProperties, buildRuntimeProperties } from './events.js';
-import { applyInstallCohortPersonOnce } from './install-cohorts.js';
-import {
-  getBetaTelemetryState,
-  getOrCreateDistinctId,
-  isAnalyticsEnabled,
-  recordUsageSurface,
-  setBetaTelemetryChoice,
-} from './identity.js';
-import { onMcpClientConnected, onMcpClientDisconnected } from './mcp-client.js';
-import {
+/** Permanently disabled in the local-only distribution. No IDs, storage, timers or network. */
+import { NoopAnalyticsProvider } from './noop.js';
+import type { AnalyticsRuntimeConfig, BetaTelemetryState } from './types.js';
+
+const provider = new NoopAnalyticsProvider();
+
+export { getAppVersion } from './app-version.js';
+export {
   captureMcpPageleave,
   captureMcpPageview,
   endMcpAnalyticsSession,
   recordMcpToolCall,
   startMcpAnalyticsSession,
 } from './mcp-session.js';
-import { getAnalytics, resetAnalyticsProvider, shutdownAnalyticsClient } from './provider.js';
-import type {
-  AnalyticsEvent,
-  AnalyticsProvider,
-  AnalyticsRuntimeConfig,
-  BetaTelemetryState,
-  UsageSurface,
-} from './types.js';
 export type { McpShutdownReason } from './mcp-session.js';
-
-/** Persist the install ID and register one anonymous analytics person per process. */
-export function ensureAnalyticsIdentity(): void {
-  if (!isAnalyticsEnabled() || !hasAnalyticsKey()) return;
-  getOrCreateDistinctId();
-  getAnalytics();
-}
-
-export function capture(
-  name: string,
-  properties?: Record<string, unknown>,
-  options?: { insertId?: string }
-): void {
-  if (!isAnalyticsEnabled() || !hasAnalyticsKey()) return;
-  getAnalytics().capture({
-    name,
-    properties: buildRuntimeProperties(properties),
-    insertId: options?.insertId,
-  });
-}
-
-export function identifyAnalyticsPerson(properties?: Record<string, unknown>): void {
-  if (!isAnalyticsEnabled() || !hasAnalyticsKey()) return;
-  const props = { ...(properties ?? {}) };
-  const usageSurface = typeof props.usage_surface === 'string' ? props.usage_surface : undefined;
-  if (usageSurface) {
-    props.usage_surfaces = recordUsageSurface(usageSurface);
-    delete props.usage_surface;
-  }
-  applyInstallCohortPersonOnce({
-    ...(usageSurface ? { usageSurface } : {}),
-    ...(typeof props.mcp_client_name === 'string' ? { mcpClientName: props.mcp_client_name } : {}),
-  });
-  getAnalytics().identify(buildPersonIdentifyProperties(props));
-}
-
-/** Refresh the anonymous person profile when Photoshop version becomes known. */
-export function identifyPhotoshopVersion(version: string): void {
-  if (!version || version === 'Unknown') return;
-  identifyAnalyticsPerson({ photoshop_version: version });
-}
-
-/** Record standalone UI provider/model choice on the person profile (no prompt content). */
-export function identifyUiModelSelection(providerId: string, model: string): void {
-  identifyAnalyticsPerson({
-    usage_surface: 'server',
-    active_provider: providerId,
-    active_model: model,
-    last_active_at: Date.now(),
-  });
-  capture('ui_model_selected', {
-    provider_id: providerId,
-    model,
-    event_source: 'server',
-  });
-}
-
-export async function shutdownAnalytics(): Promise<void> {
-  await shutdownAnalyticsClient();
-}
-
-export function getAnalyticsRuntimeConfig(): AnalyticsRuntimeConfig {
-  const enabled = isAnalyticsEnabled() && hasAnalyticsKey();
-  const beta = getBetaTelemetryState();
-  return {
-    enabled,
-    provider: 'rybbit',
-    siteId: resolveRybbitSiteId(),
-    analyticsHost: resolveRybbitAnalyticsHost(),
-    distinctId: getOrCreateDistinctId(),
-    betaTelemetryOptIn: beta.betaTelemetryOptIn,
-    betaTelemetryPromptAnswered: beta.betaTelemetryPromptAnswered,
-  };
-}
-export { captureAnalyticsMilestoneOnce } from './milestones.js';
-export type { AnalyticsMilestone } from './milestones.js';
-export {
-  captureBetaChatTurn,
-  captureMcpPageleave,
-  captureMcpPageview,
-  endMcpAnalyticsSession,
-  getAnalytics,
-  getAppVersion,
-  getBetaTelemetryState,
-  onMcpClientConnected,
-  onMcpClientDisconnected,
-  recordMcpToolCall,
-  resetAnalyticsProvider,
-  setBetaTelemetryChoice,
-  startMcpAnalyticsSession,
-};
 export type {
   AnalyticsEvent,
   AnalyticsProvider,
   AnalyticsRuntimeConfig,
   BetaTelemetryState,
   UsageSurface,
-};
+} from './types.js';
+
+export type AnalyticsMilestone = 'mcp_first_tool_success' | 'mcp_photoshop_first_connected';
+
+export function ensureAnalyticsIdentity(): void {}
+export function capture(
+  _name: string,
+  _properties?: Record<string, unknown>,
+  _options?: { insertId?: string }
+): void {}
+export function identifyAnalyticsPerson(_properties?: Record<string, unknown>): void {}
+export function identifyPhotoshopVersion(_version: string): void {}
+export function identifyUiModelSelection(_providerId: string, _model: string): void {}
+export function onMcpClientConnected(
+  _client: { name: string; version: string } | undefined
+): void {}
+export function onMcpClientDisconnected(): void {}
+export function resetAnalyticsProvider(): void {}
+export function setBetaTelemetryChoice(_optedIn: boolean): void {}
+export function captureBetaChatTurn(_input: {
+  providerId: string;
+  model: string;
+  authMethod: string;
+  userPrompt: string;
+  assistantText: string;
+  assistantReasoning?: string;
+  toolNames: string[];
+}): void {}
+export function captureAnalyticsMilestoneOnce(
+  _milestone: AnalyticsMilestone,
+  _properties: Record<string, unknown> = {}
+): boolean {
+  return false;
+}
+export function getAnalytics(): NoopAnalyticsProvider {
+  return provider;
+}
+export async function shutdownAnalytics(): Promise<void> {}
+export function getBetaTelemetryState(): BetaTelemetryState {
+  return { betaTelemetryOptIn: false, betaTelemetryPromptAnswered: true };
+}
+export function getAnalyticsRuntimeConfig(): AnalyticsRuntimeConfig {
+  return {
+    enabled: false,
+    provider: 'none',
+    siteId: '',
+    analyticsHost: '',
+    distinctId: '',
+    ...getBetaTelemetryState(),
+  };
+}

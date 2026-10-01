@@ -66,8 +66,8 @@ const guidePromptNames = new Set<string>(PHOTOSHOP_GUIDE_PROMPT_NAMES);
 
 assert.equal(PHOTOSHOP_RECIPE_TOOL_NAMES.length, 16);
 assert.equal(Object.keys(RECIPE_TO_PROMPT).length, 16);
-assert.equal(PHOTOSHOP_GUIDE_PROMPT_NAMES.length, 7);
-assert.equal(PHOTOSHOP_PROMPT_TEMPLATES.length, 23);
+assert.equal(PHOTOSHOP_GUIDE_PROMPT_NAMES.length, 4);
+assert.equal(PHOTOSHOP_PROMPT_TEMPLATES.length, 20);
 
 for (const recipeName of PHOTOSHOP_RECIPE_TOOL_NAMES) {
   const promptName = RECIPE_TO_PROMPT[recipeName];
@@ -129,15 +129,24 @@ for (const marker of [
   'photoshop_recipe_remove_distraction',
   'photoshop_recipe_dodge_burn',
   'photoshop_adjust_curves',
-  'photoshop_generative_remove',
-  'photoshop_sky_replacement',
-  'photoshop_neural_filter',
-  'ps.generative_fill',
+  'Local operation policy',
+  'Device',
+  'cloud_disabled',
+  'unsandboxed',
 ]) {
   assert.ok(
     instructions.includes(marker),
     `Photoshop instructions should mention "${marker}".`
   );
+}
+
+for (const forbidden of ['ps.generative_fill', 'ps.generative_remove', 'ps.generative_expand']) {
+  assert.ok(!promptRegistry.has(forbidden), `${forbidden} must not be advertised.`);
+}
+
+for (const template of PHOTOSHOP_PROMPT_TEMPLATES) {
+  const rendered = template.handler({});
+  assert.ok(JSON.stringify(rendered.messages).includes('Local operation policy'), `${template.name} must carry the local policy.`);
 }
 
 console.log(

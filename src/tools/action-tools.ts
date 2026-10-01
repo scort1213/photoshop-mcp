@@ -2,13 +2,14 @@ import { ToolDefinition, ToolResult } from '../core/tool-registry.js';
 import { PhotoshopConnection } from '../platform/connection.js';
 import { PhotoshopAPIFactory } from '../api/photoshop-api.js';
 import { ExtendScriptSnippets } from '../api/extendscript.js';
+import { LOCAL_ONLY_GUIDANCE } from '../prompts/local-only-guidance.js';
 
 export function createActionTools(connection: PhotoshopConnection): ToolDefinition[] {
   return [
     {
       tool: {
         name: 'photoshop_play_action',
-        description: 'Play a recorded action from the Actions palette',
+        description: 'Play a recorded action from the Actions palette. Review every recorded step for local operation before playback.\n\n' + LOCAL_ONLY_GUIDANCE,
         inputSchema: {
           type: 'object',
           properties: {
@@ -37,7 +38,7 @@ export function createActionTools(connection: PhotoshopConnection): ToolDefiniti
           'IMPORTANT: Your code runs inside a wrapping IIFE. Use an explicit `return` to pass data back — ' +
           'a bare trailing expression returns undefined. Example: `return { ok: true };` ' +
           'Objects are serialized with toSource() and parsed automatically on macOS and Windows.\n' +
-          'Preconditions: valid ExtendScript; active document if script expects one. Side effects: depends on code.',
+          'Preconditions: valid ExtendScript; active document if script expects one. Side effects: depends on code.\n\n' + LOCAL_ONLY_GUIDANCE,
         inputSchema: {
           type: 'object',
           properties: {

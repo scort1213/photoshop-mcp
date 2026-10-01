@@ -1,7 +1,7 @@
 /**
  * Fail if the published file set would boot into MODULE_NOT_FOUND.
  *
- * Does not run `npm pack` — that always triggers `prepare` / a full web build
+ * Does not run `npm pack` — that triggers `prepare` / a server build
  * and mixes script logs into `--json` output. Instead we apply package.json
  * `files` + .npmignore the same way a tarball would.
  *
@@ -16,6 +16,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const REQUIRED_FILES = [
   'dist/index.js',
   'dist/ui/cli.js',
+  'dist/ui/server.js',
+  'dist/ui/local-only.js',
   'dist/analytics/index.js',
   'scripts/prepare.mjs',
 ];
@@ -103,6 +105,37 @@ function collectSpecifiers(source) {
 async function main() {
   const problems = [];
   const published = collectPublishedFiles();
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  const allowedAnalytics = new Set([
+    'index.js',
+    'mcp-session.js',
+    'types.js',
+    'noop.js',
+    'app-version.js',
+  ]);
+  const allowedUi = new Set(['cli.js', 'server.js', 'local-only.js']);
+  for (const file of published) {
+    if (file.startsWith('web/') || file.startsWith('uxp-plugin/')) problems.push(`local-only package must not ship ${file}`);
+    if (
+      file.startsWith('dist/analytics/') &&
+      file.endsWith('.js') &&
+      !allowedAnalytics.has(file.slice('dist/analytics/'.length))
+    ) {
+      problems.push(`local-only package must not ship telemetry implementation ${file}`);
+    }
+    if (
+      file.startsWith('dist/ui/') &&
+      file.endsWith('.js') &&
+      !allowedUi.has(file.slice('dist/ui/'.length))
+    ) {
+      problems.push(`local-only package must not ship historical UI implementation ${file}`);
+    }
+  }
+  for (const dependency of Object.keys(pkg.dependencies ?? {})) {
+    if (!['@modelcontextprotocol/sdk', 'zod'].includes(dependency)) {
+      problems.push(`unexpected production dependency ${dependency}`);
+    }
+  }
 
   for (const file of REQUIRED_FILES) {
     if (!exists(file)) {
@@ -135,10 +168,24 @@ async function main() {
   }
 
   // Same import chain that crashed npx in issue #38.
-  await import(pathToFileURL(join(ROOT, 'dist/analytics/index.js')).href);
+  const analytics = await import(pathToFileURL(join(ROOT, 'dist/analytics/index.js')).href);
+  if (
+    analytics.getAnalyticsRuntimeConfig().enabled ||
+    analytics.getAnalyticsRuntimeConfig().distinctId !== ''
+  ) {
+    throw new Error('Local-only analytics must remain disabled without an install ID');
+  }
+  const { startUIServer } = await import(pathToFileURL(join(ROOT, 'dist/ui/server.js')).href);
+  let uiRejected = false;
+  try {
+    await startUIServer({ host: '127.0.0.1', port: 5174 });
+  } catch (error) {
+    uiRejected = error instanceof Error && error.message.includes('local-only build');
+  }
+  if (!uiRejected) throw new Error('Historical cloud UI must reject startup');
 
   console.log(
-    `verify:pack ok — ${jsFiles.length} packed dist JS files, imports resolve, leftover analytics modules absent.`
+    `verify:pack ok — ${jsFiles.length} packed dist JS files, imports resolve, analytics disabled, cloud UI excluded.`
   );
 }
 

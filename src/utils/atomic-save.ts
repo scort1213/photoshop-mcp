@@ -1,5 +1,6 @@
 import { isAbsolute, extname, dirname, join } from 'node:path';
 import { access, link, mkdtemp, rename, rm, stat } from 'node:fs/promises';
+import { assertLocalPath } from './local-path.js';
 
 /** Publish only a completed file. Existing destinations require explicit opt-in. */
 export async function atomicSave(
@@ -8,9 +9,12 @@ export async function atomicSave(
   overwrite: boolean,
   write: (temporaryPath: string) => Promise<unknown>
 ): Promise<void> {
+  assertLocalPath(path);
   const extension = extname(path).toLowerCase();
   const allowed: Record<string, string[]> = {
     PSD: ['.psd'],
+    PSB: ['.psb'],
+    TIFF: ['.tif', '.tiff'],
     JPEG: ['.jpg', '.jpeg'],
     PNG: ['.png'],
     WEBP: ['.webp'],

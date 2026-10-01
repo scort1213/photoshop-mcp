@@ -1,7 +1,6 @@
 import { ToolDefinition, ToolResult } from '../../core/tool-registry.js';
-import { resolvePhotoshopCapabilities } from '../../platform/capabilities.js';
 import { PhotoshopConnection } from '../../platform/connection.js';
-import { invokeNeuralFilter } from '../../platform/uxp-bridge-client.js';
+import { cloudDisabledResult } from '../../core/local-policy.js';
 import { executeRecipe } from './_shared.js';
 
 const TOOL_NAME = 'photoshop_recipe_enhance_portrait';
@@ -50,7 +49,7 @@ export function bindEnhancePortrait(connection: PhotoshopConnection): ToolDefini
           use_neural_skin: {
             type: 'boolean',
             description:
-              'Apply Neural Filter skin smoothing via UXP bridge before frequency separation (default false)',
+              'Neural Filters are disabled; true is rejected. Omit or use false for local frequency separation.',
             default: false,
           },
         },
@@ -64,65 +63,10 @@ async function runEnhancePortrait(
   connection: PhotoshopConnection,
   args: Record<string, unknown>
 ): Promise<ToolResult> {
+  if (args.use_neural_skin === true) return cloudDisabledResult('use_neural_skin');
   const intensity = parseIntensity(args.intensity);
   const skinSmoothing = args.skin_smoothing !== false;
   const radius = RADIUS_BY_INTENSITY[intensity];
-
-  if (args.use_neural_skin === true) {
-    const version = await connection.getVersion();
-    const caps = await resolvePhotoshopCapabilities(version);
-    if (!caps.features.neural_filters) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                ok: false,
-                code: 'uxp_bridge_unavailable',
-                message:
-                  'use_neural_skin requires the UXP bridge plugin. Load uxp-plugin/ via UXP Developer Tools.',
-                suggested_next_tool: 'photoshop_get_capabilities',
-              },
-              null,
-              2
-            ),
-          },
-        ],
-        isError: true,
-      };
-    }
-    const neural = await invokeNeuralFilter('skin_smoothing', {
-      smoothness: intensity === 'high' ? 70 : intensity === 'low' ? 30 : 50,
-      blur: intensity === 'high' ? 60 : intensity === 'low' ? 25 : 40,
-    });
-    if (!neural.ok) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                ok: false,
-                code: neural.error?.includes('outcome_unknown')
-                  ? 'outcome_unknown'
-                  : neural.error?.includes('queue_timeout')
-                    ? 'queue_timeout'
-                    : 'uxp_bridge_unavailable',
-                message: neural.error ?? 'Neural skin smoothing failed',
-                suggested_next_tool: neural.error?.includes('outcome_unknown')
-                  ? 'photoshop_get_state'
-                  : 'photoshop_get_capabilities',
-              },
-              null,
-              2
-            ),
-          },
-        ],
-        isError: true,
-      };
-    }
-  }
 
   const body = `
     var doc = app.activeDocument;

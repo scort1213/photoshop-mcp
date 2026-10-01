@@ -1,8 +1,7 @@
 /**
  * Client for the MCP-hosted UXP bridge (health check + neural filter invoke).
  */
-import { ensureUxpBridgeServer, invokeUxpBridge } from './uxp-bridge-server.js';
-import { getTargetDocumentId } from '../core/document-target.js';
+import { ensureUxpBridgeServer } from './uxp-bridge-server.js';
 
 const HEALTH_TIMEOUT_MS = 800;
 
@@ -33,21 +32,8 @@ export interface NeuralFilterParams {
 }
 
 export async function invokeNeuralFilter(
-  filter: NeuralFilterKind,
-  params: NeuralFilterParams = {}
+  _filter: NeuralFilterKind,
+  _params: NeuralFilterParams = {}
 ): Promise<{ ok: boolean; data?: unknown; error?: string }> {
-  const documentId = getTargetDocumentId();
-  const result = await invokeUxpBridge(
-    'neural_filter',
-    {
-      filter,
-      ...params,
-      ...(documentId !== undefined ? { document_id: documentId } : {}),
-    },
-    90_000
-  );
-  if (!result.ok) {
-    return { ok: false, error: result.error ?? 'neural_filter_failed' };
-  }
-  return { ok: true, data: result.data };
+  return { ok: false, error: 'cloud_disabled: Neural Filters are disabled in this local build' };
 }

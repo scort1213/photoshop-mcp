@@ -5,7 +5,7 @@ export type AnalyticsPropertyValue = string | number | boolean | string[] | null
 export interface AnalyticsEvent {
   name: string;
   properties?: Record<string, AnalyticsPropertyValue>;
-  /** Local milestone id (not sent to Rybbit). */
+  /** Compatibility field; analytics are permanently disabled. */
   insertId?: string;
 }
 
@@ -16,7 +16,7 @@ export interface BetaTelemetryState {
 
 export interface AnalyticsRuntimeConfig {
   enabled: boolean;
-  provider: 'rybbit';
+  provider: 'none';
   siteId: string;
   analyticsHost: string;
   distinctId: string;

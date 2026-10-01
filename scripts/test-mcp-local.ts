@@ -1,6 +1,6 @@
 /**
  * Local smoke test: spawn photoshop-mcp via stdio and exercise the prompt layer.
- * Run: npx tsx scripts/test-mcp-local.ts
+ * Run after build: npm run test:mcp-local
  */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -35,8 +35,8 @@ function textFromToolResult(result: {
 
 async function main(): Promise<void> {
   const transport = new StdioClientTransport({
-    command: 'npx',
-    args: ['tsx', join(ROOT, 'src/index.ts')],
+    command: process.execPath,
+    args: [join(ROOT, 'dist/index.js')],
     env: {
       ...process.env,
       LOG_LEVEL: '0',
@@ -91,9 +91,6 @@ async function main(): Promise<void> {
     'ps.composite_blend',
     'ps.dodge_burn_guide',
     'ps.gradient_blend',
-    'ps.generative_fill',
-    'ps.generative_remove',
-    'ps.generative_expand',
   ];
   const expectedPromptCount = expectedRecipePrompts.length + expectedGuidePrompts.length;
   if (promptNames.length !== expectedPromptCount) fail('prompt count', String(promptNames.length));
@@ -153,13 +150,6 @@ async function main(): Promise<void> {
     'photoshop_recipe_dodge_burn',
     'photoshop_recipe_remove_distraction',
     'photoshop_recipe_csv_to_cards',
-    'photoshop_generative_fill',
-    'photoshop_generative_remove',
-    'photoshop_generative_expand',
-    'photoshop_generative_upscale',
-    'photoshop_sky_replacement',
-    'photoshop_generate_image',
-    'photoshop_neural_filter',
     'photoshop_apply_layer_style',
     'photoshop_apply_lut',
     'photoshop_adjust_vibrance',
@@ -176,6 +166,19 @@ async function main(): Promise<void> {
     if (!toolNames.has(name)) fail('missing tool', name);
   }
   ok('recipe + state tools registered', `${required.length} checked`);
+  for (const name of ['photoshop_generative_fill', 'photoshop_generative_remove',
+    'photoshop_generative_expand', 'photoshop_generative_upscale',
+    'photoshop_generate_image', 'photoshop_neural_filter', 'photoshop_sky_replacement']) {
+    if (toolNames.has(name)) fail('cloud tool advertised', name);
+    const blocked = await client.callTool({ name, arguments: {} });
+    if (!blocked.isError || !textFromToolResult(blocked).includes('cloud_disabled')) {
+      fail('cloud tool not blocked', name);
+    }
+  }
+  for (const name of ['photoshop_execute_script', 'photoshop_play_action']) {
+    if (!toolNames.has(name)) fail('trusted scripting tool removed', name);
+  }
+
 
   section('Call photoshop_ping');
   const ping = await client.callTool({ name: 'photoshop_ping', arguments: {} });

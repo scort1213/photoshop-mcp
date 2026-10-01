@@ -1,7 +1,9 @@
+> Local-only fork: all active prompts include the local operation policy. Firefly guide prompts are no longer registered. See [LOCAL_ONLY.md](../LOCAL_ONLY.md).
+
 # AI / Prompt Layer for Photoshop
 
-The photoshop-mcp server exposes 100 atomic `photoshop_*` tools plus 16 recipe
-`photoshop_recipe_*` tools (116 total), along with a thin
+The photoshop-mcp server exposes 96 atomic `photoshop_*` tools plus 16 recipe
+`photoshop_recipe_*` tools (112 total), along with a thin
 AI/prompt layer ported from TTT: server-level instructions, MCP prompt templates,
 recipe tools, state/preview tools, version-aware capabilities, and structured
 error envelopes.
@@ -48,9 +50,6 @@ Twenty-three templates in [`src/prompts/templates/`](../src/prompts/templates/),
 | `ps.color_correct` | Tone / contrast fix chain |
 | `ps.dodge_burn_guide` | 50% gray overlay retouch setup |
 | `ps.composite_blend` | Place asset + mask + blend mode |
-| `ps.generative_fill` | Firefly generative fill workflow |
-| `ps.generative_remove` | AI Remove workflow |
-| `ps.generative_expand` | Generative Expand workflow |
 
 Each template uses arg coercion helpers from [`src/prompts/_shared.ts`](../src/prompts/_shared.ts)
 and returns a `GetPromptResult` with `description` + structured Goal/Plan/End state text

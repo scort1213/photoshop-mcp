@@ -8,7 +8,7 @@ import {
 export const skyBlendTemplate: PhotoshopPromptTemplate = {
   name: 'ps.sky_blend',
   description:
-    'Place an external sky image and blend it at the horizon with a gradient mask — one undo. Users often say: replace sky, fix blown sky, better clouds, swap sky background. Photoshop Sky Replacement menu is not scriptable via ExtendScript.',
+    'Place a local sky image and blend it at the horizon with a gradient mask — one undo. Users often say: replace sky, fix blown sky, better clouds, swap sky background. No native sky or generative operation is attempted.',
   arguments: [
     {
       name: 'sky_image_path',

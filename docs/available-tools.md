@@ -1,6 +1,8 @@
+> Local-only fork: the current MCP tools/list response is authoritative. Cloud/native-sky tools are blocked; ordinary tools and custom scripts remain. Select Subject requires Device processing. See [LOCAL_ONLY.md](../LOCAL_ONLY.md).
+
 # Available Tools
 
-**116 tools total** — 100 atomic `photoshop_*` tools plus 16 recipe `photoshop_recipe_*` workflows (single undo step each).
+**112 tools total** — 96 atomic `photoshop_*` tools plus 16 recipe `photoshop_recipe_*` workflows (single undo step each).
 
 Reference for all atomic `photoshop_*` MCP tools exposed by this server (parameters, examples, and return shapes).
 
@@ -103,6 +105,10 @@ Close the active document.
 
 **Parameters:**
 - `save` (boolean, optional): Save before closing (default: false)
+- `path` (string, optional): Local PSD, PSB, JPEG, PNG or TIFF destination. An existing local filename is reused; otherwise provide this path. Other formats require a supported local destination.
+- `overwrite` (boolean, optional): Allow replacing an explicit destination. Saving back to the current local filename already implies replacement.
+
+Save or validation failure leaves the document open. Saving uses an explicit local copy and then closes without an implicit cloud-document save.
 
 ```javascript
 // Example: Close without saving
@@ -978,32 +984,7 @@ photoshop_open_image({
 
 ### Generative AI (Firefly)
 
-Requires Photoshop 24+ and signed-in Adobe generative credits. Call `photoshop_get_capabilities` first.
-
-#### `photoshop_generative_fill`
-Fill the current selection with Generative Fill. **Parameters:** `prompt` (required)
-
-#### `photoshop_generative_remove`
-AI Remove on the current selection. **Parameters:** `feather_px`, `auto_select_subject`
-
-#### `photoshop_generative_expand`
-Extend canvas with Generative Expand. **Parameters:** `prompt`, `direction`
-
-#### `photoshop_generative_upscale`
-Generative Upscale (PS 27+). **Parameters:** `target_scale` (2 or 4)
-
-#### `photoshop_sky_replacement`
-Native Sky Replacement. **Parameters:** `sky_image_path` (optional)
-
-#### `photoshop_generate_image`
-Text-to-image. **Parameters:** `prompt`, `width`, `height`
-
-### Neural Filters (UXP bridge)
-
-Requires `uxp-plugin/` — see [development.md](development.md).
-
-#### `photoshop_neural_filter`
-**Parameters:** `filter` (skin_smoothing|harmonize|depth_blur|super_zoom|colorize), `smoothness`, `blur`
+These historical cloud/native tools are disabled in this fork. Use the local alternatives in [generative-ai.md](generative-ai.md).
 
 ### Layer Styles
 

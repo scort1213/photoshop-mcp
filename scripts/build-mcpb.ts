@@ -5,14 +5,7 @@
  * Run: npm run build:mcpb
  */
 import { execSync } from 'node:child_process';
-import {
-  copyFileSync,
-  cpSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { copyFileSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -46,6 +39,7 @@ function assertExists(path: string, label: string): void {
 function main(): void {
   console.log('Building server…');
   run('npm run build');
+  run('npm run verify:pack');
 
   assertExists(join(ROOT, 'dist', 'index.js'), 'dist/index.js');
 
@@ -60,8 +54,6 @@ function main(): void {
   writeFileSync(join(STAGING, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 
   cpSync(join(ROOT, 'dist'), join(SERVER_DIR, 'dist'), { recursive: true });
-  cpSync(join(ROOT, 'web', 'dist'), join(SERVER_DIR, 'web', 'dist'), { recursive: true });
-  cpSync(join(ROOT, 'uxp-plugin'), join(SERVER_DIR, 'uxp-plugin'), { recursive: true });
   copyFileSync(join(ROOT, 'LICENSE'), join(SERVER_DIR, 'LICENSE'));
 
   const bundlePkg = {
@@ -91,7 +83,7 @@ function main(): void {
 
   rmSync(STAGING, { recursive: true, force: true });
   console.log(`MCPB ready: ${outFile} (+ ${stableFile})`);
-  console.log('Publish: smithery mcp publish "./release/photoshop-mcp-' + pkg.version + '.mcpb" -n alisaitteke/photoshop-mcp');
+  console.log('Local-only bundle; no publication or login is required to run it.');
 }
 
 main();

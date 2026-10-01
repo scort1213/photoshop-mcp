@@ -1,5 +1,3 @@
-import { PhotoshopDetector } from './detector.js';
-import { isUxpBridgeReachable } from './uxp-bridge-client.js';
 
 export interface ParsedPhotoshopVersion {
   major: number;
@@ -35,48 +33,33 @@ export function parsePhotoshopVersion(version: string): ParsedPhotoshopVersion {
 
 export function getPhotoshopCapabilities(version: string): PhotoshopCapabilities {
   const parsed = parsePhotoshopVersion(version);
-  const detector = new PhotoshopDetector();
 
   const major = parsed.major;
 
 
   const selectSubjectV2 = major >= 23;
-  const generativeFill = major >= 25;
-  const generativeRemove = generativeFill;
-  const generativeExpand = generativeFill;
-  const generativeUpscale = major >= 27;
-  const skyReplacementNative = generativeFill;
-  const executeAsModal = generativeFill;
+  const executeAsModal = major >= 25;
 
   return {
     version,
     features: {
       select_subject_v2: selectSubjectV2,
-      generative_fill: generativeFill,
-      // Generate Image shipped separately from Generative Fill in Photoshop 25.11.
-      generate_image: major > 25 || (major === 25 && parsed.minor >= 11),
-      generative_remove: generativeRemove,
-      generative_expand: generativeExpand,
-      generative_upscale: generativeUpscale,
-      sky_replacement_native: skyReplacementNative,
+      // Cloud-backed operations are disabled regardless of installed version.
+      generative_fill: false,
+      generate_image: false,
+      generative_remove: false,
+      generative_expand: false,
+      generative_upscale: false,
+      sky_replacement_native: false,
       neural_filters: false,
       uxp_bridge_reachable: false,
       execute_as_modal_timeout: executeAsModal,
-      uxp_plugin_api: major > 0 && detector.supportsUXP(version),
+      uxp_plugin_api: false,
     },
   };
 }
 
-/** Merge runtime UXP bridge reachability into version-derived capabilities. */
+/** Capability reads do not probe or start a Neural Filter bridge in this build. */
 export async function resolvePhotoshopCapabilities(version: string): Promise<PhotoshopCapabilities> {
-  const base = getPhotoshopCapabilities(version);
-  const bridgeUp = await isUxpBridgeReachable();
-  return {
-    ...base,
-    features: {
-      ...base.features,
-      uxp_bridge_reachable: bridgeUp,
-      neural_filters: bridgeUp && base.features.uxp_plugin_api,
-    },
-  };
+  return getPhotoshopCapabilities(version);
 }

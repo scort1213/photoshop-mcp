@@ -1,21 +1,28 @@
-import { describe, expect, it } from 'vitest';
-import { captureMcpPageleave, captureMcpPageview } from '../src/analytics/mcp-session.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as session from '../src/analytics/mcp-session.js';
 
-describe('MCP session virtual page events', () => {
-  it('exports pageview helpers from mcp-session (no standalone pageview module)', () => {
-    expect(typeof captureMcpPageview).toBe('function');
-    expect(typeof captureMcpPageleave).toBe('function');
-  });
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.useRealTimers();
+});
 
-  it('is a no-op when analytics are disabled', () => {
-    const previous = process.env.ANALYTICS_DISABLED;
-    process.env.ANALYTICS_DISABLED = '1';
-    try {
-      expect(() => captureMcpPageview()).not.toThrow();
-      expect(() => captureMcpPageleave(12, 'sigint')).not.toThrow();
-    } finally {
-      if (previous === undefined) delete process.env.ANALYTICS_DISABLED;
-      else process.env.ANALYTICS_DISABLED = previous;
-    }
+describe('inert MCP session compatibility hooks', () => {
+  it('never schedules batch flushes even when legacy environment settings enable analytics', async () => {
+    vi.stubEnv('ANALYTICS_DISABLED', '0');
+    vi.useFakeTimers();
+    session.startMcpAnalyticsSession();
+    session.captureMcpPageview();
+    session.recordMcpToolCall({
+      toolName: 'photoshop_get_state',
+      ok: false,
+      errorCode: 'test',
+      durationMs: 1,
+    });
+    session.flushMcpToolBatch('debounce');
+    session.flushMcpToolBatchOnClientDisconnect();
+    session.captureMcpPageleave(1, 'sigint');
+    session.endMcpAnalyticsSession('sigint');
+    await vi.advanceTimersByTimeAsync(65_000);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

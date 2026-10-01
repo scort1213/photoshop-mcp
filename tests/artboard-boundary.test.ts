@@ -126,16 +126,18 @@ it('does not permit a half pixel geometry drift during ordinary edits', () => {
     { ...f.context, drift: () => { coordinate += 0.25; } })).toThrow('artboard_geometry_changed');
 });
 
-it.each([false, true])('save-on-close restores settings before closing, save failure=%s', fails => {
+it('refuses implicit save-on-close without editing or closing the document', () => {
   const f = fixture();
   let closed = false;
+  let saved = false;
   Object.assign(f.context.app.activeDocument, {
-    save: () => { expect(f.size()).toBe(false); if (fails) throw new Error('save failed'); },
-    close: () => { expect(f.size()).toBe(true); closed = true; },
+    save: () => { saved = true; },
+    close: () => { closed = true; },
   });
-  const run = () => runInNewContext('(function(){' + ExtendScriptSnippets.closeDocument(true) + '})()',
-    { ...f.context, SaveOptions: { DONOTSAVECHANGES: 0, SAVECHANGES: 1 } });
-  if (fails) expect(run).toThrow('save failed'); else run();
-  expect(closed).toBe(!fails);
-  expect(f.writes).toEqual([false, true]);
+  expect(() => runInNewContext('(function(){' + ExtendScriptSnippets.closeDocument(true) + '})()',
+    { ...f.context, SaveOptions: { DONOTSAVECHANGES: 0, SAVECHANGES: 1 } }))
+    .toThrow('local_path_required');
+  expect(saved).toBe(false);
+  expect(closed).toBe(false);
+  expect(f.writes).toEqual([]);
 });

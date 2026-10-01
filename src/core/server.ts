@@ -34,8 +34,8 @@ import { createHistoryTools } from '../tools/history-tools.js';
 import { createLayerOrderingTools } from '../tools/layer-ordering-tools.js';
 import { createStateTools } from '../tools/state-tools.js';
 import { createRecipeTools } from '../tools/recipes/index.js';
-import { createGenerativeTools } from '../tools/generative-tools.js';
-import { createNeuralTools } from '../tools/neural-tools.js';
+import { CLOUD_DISABLED_TOOLS, disabledCloudOption } from './local-policy.js';
+import { assertFixedToolPaths, withLocalPathContext } from '../utils/local-path.js';
 import { createStyleTools } from '../tools/style-tools.js';
 import { createColorAdjustmentTools } from '../tools/color-adjustment-tools.js';
 import { createDataTools } from '../tools/data-tools.js';
@@ -82,13 +82,19 @@ export class PhotoshopMCPServer {
   }
 
   private registerToolDefinition(definition: ToolDefinition): void {
+    if (CLOUD_DISABLED_TOOLS.has(definition.tool.name)) return;
     const tool = withOptionalDocumentId(definition.tool);
     const validate = new AjvJsonSchemaValidator().getValidator(tool.inputSchema);
     this.toolRegistry.register(tool.name, {
       tool,
-      handler: wrapToolHandler(tool.name, wrapDocumentIdHandler((args) => {
+      handler: wrapToolHandler(tool.name, async (args) => {
+        const disabled = disabledCloudOption(tool.name, args);
+        if (disabled) return disabled;
+        return wrapDocumentIdHandler((targetedArgs) => withLocalPathContext(() => {
+        args = targetedArgs;
         const checked = validate(args);
         if (!checked.valid) throw new Error('invalid_arguments: ' + checked.errorMessage);
+        assertFixedToolPaths(tool.name, args);
         const context: { args: Record<string, unknown>; recoveryBackup?: string } = { args };
         return operationContext.run(context, () => access.run(READ_TOOLS.has(tool.name) ? 'read' : 'write', () =>
           documentManaged.run(['photoshop_open_image', 'photoshop_create_document', 'photoshop_set_active_document'].includes(tool.name), () =>
@@ -97,7 +103,8 @@ export class PhotoshopMCPServer {
               if (context.recoveryBackup) result.content.push({ type: 'text', text: 'Verified recovery backup: ' + context.recoveryBackup });
               return result;
             }))));
-      })),
+      }))(args);
+      }),
     });
   }
 
@@ -147,7 +154,7 @@ export class PhotoshopMCPServer {
 
     const connection = this.session.getConnection();
 
-    // Start the optional UXP bridge lazily, only when capability checks need it.
+    // This build does not start the optional Neural Filter bridge.
 
     this.registerToolDefinitions(createDocumentTools(connection));
     this.registerToolDefinitions(createLayerTools(connection));
@@ -165,8 +172,6 @@ export class PhotoshopMCPServer {
     this.registerToolDefinitions(createHistoryTools(connection));
     this.registerToolDefinitions(createLayerOrderingTools(connection));
     this.registerToolDefinitions(createStateTools(connection));
-    this.registerToolDefinitions(createGenerativeTools(connection));
-    this.registerToolDefinitions(createNeuralTools(connection));
     this.registerToolDefinitions(createStyleTools(connection));
     this.registerToolDefinitions(createColorAdjustmentTools(connection));
     this.registerToolDefinitions(createDataTools(connection));

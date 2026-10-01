@@ -158,6 +158,7 @@ export async function invokeUxpBridge(
   params: Record<string, unknown>,
   timeoutMs = 60000
 ): Promise<UxpBridgeResult> {
+  if (action === 'neural_filter') return { id: '', ok: false, error: 'cloud_disabled: Neural Filters are disabled in this local build' };
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('invalid_timeout');
   await ensureUxpBridgeServer();
   const id = randomUUID();

@@ -1,119 +1,28 @@
-# AGENTS.md — photoshop-mcp
+# AGENTS.md — local-only photoshop-mcp
 
-> **Navigation map, not a reference manual.**
-> Start with [llms.txt](llms.txt) or the site index [llms.txt](https://photoshop-mcp.com/llms.txt), then follow links as needed.
+Start with [LOCAL_ONLY.md](LOCAL_ONLY.md) and [llms.txt](llms.txt).
 
-## Entry strategy
+## Runtime and tool policy
 
-| Scenario | Path |
-| -------- | ---- |
-| Cursor / Claude Desktop / VS Code | Configure `mcpServers` → `npx -y @alisaitteke/photoshop-mcp` (stdio) |
-| Claude Code | `claude mcp add photoshop -- npx -y @alisaitteke/photoshop-mcp` |
-| Standalone chat UI (no IDE) | `npx -p @alisaitteke/photoshop-mcp photoshop-mcp-ui` |
-| Local development | `npm install && npm run build && node dist/index.js` — see [docs/development.md](docs/development.md) |
+- Configure the MCP client to run the local Node executable with this checkout's `dist/index.js`. Never substitute the upstream npm package.
+- This fork permanently disables usage statistics, standalone cloud chat, model/account validation, Firefly tools, Neural Filters and native sky automation. Do not restore them or suggest login/credits as a recovery step.
+- Use local content-aware fill for removal, local frequency separation for retouching and local images/masks for compositing.
+- Select Subject, background removal and passport photos require Photoshop Image Processing set to Device. Do not switch to Cloud or invent an unverified descriptor to force Device.
+- Keep `photoshop_execute_script` and `photoshop_play_action` available. Use only local editing, local assets/fonts and local file destinations in custom JSX and recorded actions. Do not issue network requests, cloud operations, online font activation, browser/login commands or a cloud fallback.
+- Scripts/actions are trusted code with instruction-only restrictions, not a sandbox. Do not claim an unbypassable offline guarantee.
+- Adobe's own licensing/background services and the AI host's cloud processing are out of scope.
 
-**Prerequisites:** Photoshop running on Windows or macOS, Node.js 18+. This is unofficial and not affiliated with Adobe.
+## Workflow
 
-**Tool surface:** 116 MCP tools — 100 atomic `photoshop_*` + 16 recipe `photoshop_recipe_*`; 23 MCP prompt templates (`ps.*`).
+1. Discover current tools/prompts and read capabilities.
+2. Read `photoshop_get_state`; pin mutating tools to the target `document_id`.
+3. Prefer a matching local recipe, otherwise ordinary tools or local JSX.
+4. Inspect a preview after meaningful edits. Never automatically retry `outcome_unknown`; inspect state and explicitly recover.
 
-## Architecture (agent view)
+## Development
 
-```
-AI host (Cursor / Claude / UI)
-  │  MCP stdio
-  ▼
-PhotoshopMCPServer (Node.js)
-  │  ExtendScript via AppleScript (macOS) or COM (Windows)
-  ▼
-Adobe Photoshop
+Install dependencies explicitly with `pnpm install --frozen-lockfile --ignore-scripts`, then `pnpm run build:server`. Runtime startup must not download packages. Keep analytics permanently disabled even when old environment variables ask to enable them.
 
-Optional: UXP bridge plugin (uxp-plugin/) on 127.0.0.1:38452 for Neural Filters only.
-```
+Before delivery run lint, build:server, test:unit, verify:photoshop-prompts and verify:pack. Record real-app and client checks separately for Windows/macOS; untested platforms remain unverified.
 
-Deep dive: [docs/architecture.md](docs/architecture.md).
-
-## Recommended workflow
-
-Follow the server `instructions` advertised on MCP `initialize` ([src/prompts/instructions.ts](src/prompts/instructions.ts)):
-
-```
-1. DISCOVER: tools/list + prompts/list (or get_capabilities once per session)
-2. STATE:    photoshop_get_state before mutating; photoshop_get_preview after major steps
-3. ACT:      prefer photoshop_recipe_* for multi-step outcomes (single undo step)
-4. RECOVER:  on error, read the envelope → get_state → inspect partial changes; never automatically retry an outcome_unknown operation
-```
-
-### Tool selection
-
-| Need | Use |
-| ---- | --- |
-| Multi-step outcome (remove BG, export for web, portrait enhance) | `photoshop_recipe_*` |
-| Single precise edit | atomic `photoshop_*` |
-| Vague user intent | MCP prompt `prompts/get` (e.g. `ps.remove_background`) then call linked recipe/tool |
-| Generative AI (Fill, Remove, Expand) | `photoshop_generative_*` — requires Adobe account + credits |
-| Neural Filters (skin smooth, colorize, …) | `photoshop_neural_filter` — requires UXP bridge loaded |
-| Version / feature check | `photoshop_get_capabilities` |
-
-Full catalog: [docs/available-tools.md](docs/available-tools.md). Prompt layer: [docs/prompt-layer.md](docs/prompt-layer.md).
-
-## MCP client configuration
-
-```json
-{
-  "mcpServers": {
-    "photoshop": {
-      "command": "npx",
-      "args": ["-y", "@alisaitteke/photoshop-mcp"],
-      "env": { "LOG_LEVEL": "1" }
-    }
-  }
-}
-```
-
-Examples: [examples/cursor-config.json](examples/cursor-config.json), [examples/claude-desktop-config.json](examples/claude-desktop-config.json).
-
-### Environment variables
-
-| Variable | Purpose |
-| -------- | ------- |
-| `LOG_LEVEL` | `0`=DEBUG, `1`=INFO, `2`=WARN, `3`=ERROR |
-| `PHOTOSHOP_PATH` | Optional custom Photoshop install path |
-| `PSMCP_UI_TOKEN` | Pin standalone UI API token (see README) |
-
-## Troubleshooting (common agent blockers)
-
-| Symptom | Fix |
-| ------- | --- |
-| Photoshop not found | Start Photoshop; set `PHOTOSHOP_PATH` if non-standard install |
-| Tool times out | Distinguish `queue_timeout` from `outcome_unknown`; inspect state, then explicitly recover after completion. Do not automatically retry writes. See `BOUNDARY_HARDENING.md`. |
-| `generative_unavailable` / `version_unsupported` | Call `get_capabilities`; feature may need newer Photoshop or Adobe login |
-| Neural filter fails | **Add Plugin** → `uxp-plugin/manifest.json` → **Load** in UXP Developer Tools — see [docs/development.md](docs/development.md#uxp-bridge-plugin-neural-filters) |
-| No active document | Ask user to open/create a document, then `get_state` |
-
-More: [docs/troubleshooting.md](docs/troubleshooting.md).
-
-## Distribution
-
-| Channel | Identifier |
-| ------- | ---------- |
-| npm | `@alisaitteke/photoshop-mcp` |
-| MCP Registry | `io.github.alisaitteke/photoshop-mcp` |
-| GitHub | https://github.com/alisaitteke/photoshop-mcp |
-
-## Key files
-
-| File | Purpose |
-| ---- | ------- |
-| [llms.txt](llms.txt) | LLM-oriented project summary |
-| [README.md](README.md) | Human docs, install, example prompts |
-| [server.json](server.json) | MCP Registry metadata |
-| [src/core/server.ts](src/core/server.ts) | MCP server entry |
-| [src/tools/](src/tools/) | Tool implementations |
-| [src/prompts/](src/prompts/) | MCP prompt templates |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | PR and release workflow |
-
-## Contributing (agents editing this repo)
-
-- Canonical language for code, comments, commits, and PRs: **English**.
-- Before PR: `npm run lint`, `npm run build:server`, `npm run verify:photoshop-prompts`, `npm run verify:pack`.
-- Do not add AI-attribution footers to commits or PR descriptions.
+Canonical code/comments/commits/PRs are English. Do not add AI-attribution footers. Preserve the existing targeting, mutex, timeout and recovery safeguards.

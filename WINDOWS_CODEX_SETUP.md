@@ -1,3 +1,5 @@
+> **Local-only fork update:** follow [LOCAL_ONLY.md](LOCAL_ONLY.md) for current behavior and [LOCAL_ONLY_ACCEPTANCE.md](LOCAL_ONLY_ACCEPTANCE.md) for verification. Analytics are permanently off, cloud/native-sky tools and standalone chat are disabled, and automatic selection requires Device processing. The historical tool counts/results below describe the earlier boundary-hardening build.
+
 # Windows and Codex setup
 
 This fork's `codex/windows-setup` branch was verified on Photoshop 2022

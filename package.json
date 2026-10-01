@@ -1,7 +1,7 @@
 {
   "name": "@alisaitteke/photoshop-mcp",
   "version": "1.7.14",
-  "description": "MCP server for Adobe Photoshop — 116 tools (generative AI + recipes), standalone web UI. Control Photoshop from Cursor, Claude, or natural language.",
+  "description": "Local-only MCP server for Adobe Photoshop. No standalone cloud chat UI or analytics.",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
@@ -10,23 +10,25 @@
   },
   "files": [
     "dist",
-    "web/dist",
-    "uxp-plugin",
     "examples",
     "scripts/prepare.mjs",
     "README.md",
     "LICENSE",
     "llms.txt",
-    "AGENTS.md"
+    "AGENTS.md",
+    "scripts/ui-unavailable.mjs",
+    "README.zh-CN.md",
+    "LOCAL_ONLY.md",
+    "LOCAL_ONLY_ACCEPTANCE.md"
   ],
   "scripts": {
     "dev": "tsc --watch",
-    "dev:ui": "concurrently -n server,web -c blue,green \"npm:dev:ui:server\" \"npm:dev:ui:web\"",
-    "dev:ui:server": "tsx watch src/ui/cli.ts --port 5174 --no-open",
-    "dev:ui:web": "npm --prefix web run dev",
-    "build": "npm run build:server && npm run build:web",
+    "dev:ui": "node scripts/ui-unavailable.mjs",
+    "dev:ui:server": "node scripts/ui-unavailable.mjs",
+    "dev:ui:web": "node scripts/ui-unavailable.mjs",
+    "build": "npm run build:server",
     "build:server": "node scripts/clean-dist.mjs && tsc",
-    "build:web": "npm --prefix web install --no-audit --no-fund && npm --prefix web run build",
+    "build:web": "node scripts/ui-unavailable.mjs",
     "build:site": "npm --prefix site run build",
     "start": "node dist/index.js",
     "start:ui": "node dist/ui/cli.js",
@@ -39,16 +41,16 @@
     "verify:photoshop-prompts": "tsx scripts/verify-photoshop-prompt-coverage.ts",
     "verify:pack": "node scripts/verify-pack.mjs",
     "test:mcp-local": "tsx scripts/test-mcp-local.ts",
-    "test:ui-auth": "tsx scripts/test-ui-auth.ts",
+    "test:ui-auth": "vitest run tests/local-only-ui.test.ts",
     "test:mcp-all": "tsx scripts/test-all-mcp-tools.ts",
     "test:intent-expansion": "tsx scripts/test-intent-expansion-local.ts",
     "prepare": "node scripts/prepare.mjs",
-    "sync:server-version": "tsx scripts/sync-server-version.ts",
     "build:mcpb": "tsx scripts/build-mcpb.ts",
-    "prepublishOnly": "npm run build && npm run sync:server-version && npm run verify:pack",
     "test:unit": "vitest run",
     "verify:tool-counts": "tsx scripts/verify-tool-counts.ts",
-    "site:data": "tsx scripts/generate-site-data.ts"
+    "site:data": "tsx scripts/generate-site-data.ts",
+    "test:analytics": "vitest run tests/analytics-context.test.ts tests/analytics-mcp-session.test.ts",
+    "sync:server-version": "tsx scripts/sync-server-version.ts"
   },
   "keywords": [
     "mcp",
@@ -57,56 +59,35 @@
     "adobe",
     "automation",
     "ai",
-    "ai-agents",
     "cursor",
     "claude",
     "image-editing",
     "typescript",
     "extendscript",
-    "developer-tools",
-    "vue",
-    "hono"
+    "developer-tools"
   ],
   "author": "Ali Sait Teke (https://alisait.com)",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/alisaitteke/photoshop-mcp.git"
+    "url": "git+https://github.com/scort1213/photoshop-mcp.git"
   },
-  "homepage": "https://photoshop-mcp.com/",
+  "homepage": "https://github.com/scort1213/photoshop-mcp",
   "bugs": {
-    "url": "https://github.com/alisaitteke/photoshop-mcp/issues"
+    "url": "https://github.com/scort1213/photoshop-mcp/issues"
   },
   "engines": {
     "node": ">=18.0.0"
   },
-  "publishConfig": {
-    "access": "public"
-  },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.75",
-    "@ai-sdk/google": "^3.0.67",
-    "@ai-sdk/mcp": "^1.0.40",
-    "@ai-sdk/openai": "^3.0.61",
-    "@anthropic-ai/claude-agent-sdk": "^0.3.173",
-    "@hono/node-server": "^1.13.7",
     "@modelcontextprotocol/sdk": "^1.0.4",
-    "@openrouter/ai-sdk-provider": "^2.9.0",
-    "ai": "^6.0.175",
-    "better-sqlite3": "^12.9.0",
-    "get-port": "^7.1.0",
-    "hono": "^4.6.14",
-    "open": "^10.1.0",
     "zod": "^4.4.3"
   },
-  "mcpName": "io.github.alisaitteke/photoshop-mcp",
   "devDependencies": {
     "@eslint/js": "^9.18.0",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.5",
     "@typescript-eslint/eslint-plugin": "^8.20.0",
     "@typescript-eslint/parser": "^8.20.0",
-    "concurrently": "^9.1.2",
     "eslint": "^9.18.0",
     "globals": "^17.9.0",
     "prettier": "^3.4.2",
@@ -116,6 +97,9 @@
   },
   "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319",
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
-  }
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "private": true
 }

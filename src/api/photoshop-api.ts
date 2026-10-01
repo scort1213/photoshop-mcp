@@ -7,6 +7,7 @@ import { artboardMutationGuard, ARTBOARD_SCOPED_TOOLS, ARTBOARD_GEOMETRY_TOOLS }
 import { Logger } from '../utils/logger.js';
 import { PhotoshopConnection } from '../platform/connection.js';
 import { documentGuardScript, getTargetDocumentId } from '../core/document-target.js';
+import { assertLocalPath } from '../utils/local-path.js';
 
 export type APIType = 'UXP' | 'ExtendScript';
 
@@ -32,7 +33,15 @@ export class PhotoshopAPIFactory {
   }
 
   async createAPI(): Promise<PhotoshopAPI> {
-    const info = this.connection.getPhotoshopInfo();
+    let info = this.connection.getPhotoshopInfo();
+
+    // MCP requests can arrive while session.initialize is still detecting the
+    // installed host. Use the connection's detection path before constructing
+    // an API instead of reporting a transient missing-info error.
+    if (!info) {
+      await this.connection.getVersion();
+      info = this.connection.getPhotoshopInfo();
+    }
     
     if (!info) {
       throw new Error('Photoshop info not available. Please detect Photoshop first.');
@@ -100,6 +109,7 @@ class ExtendScriptPhotoshopAPI implements PhotoshopAPI {
     let preparation = '';
     if (ARTBOARD_GEOMETRY_TOOLS.has(tool)) {
       const root = resolve(process.env.PHOTOSHOP_RECOVERY_DIR || join(homedir(), '.photoshop-mcp', 'recovery'));
+      assertLocalPath(root);
       await mkdir(root, { recursive: true });
       timeoutMs = timeoutMs ?? 120000;
       preparation = 'var __mcpArtboardOperation = ' + JSON.stringify({ tool, args: operationContext.getStore()?.args || {},

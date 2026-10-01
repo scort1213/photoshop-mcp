@@ -1,3 +1,5 @@
+> This document records the earlier boundary-hardening baseline. In the local-only fork, cloud tools and the UXP bridge entry are disabled. Use [LOCAL_ONLY.md](LOCAL_ONLY.md) and [current verification](LOCAL_ONLY_ACCEPTANCE.md); do not load the optional neural-filter plugin.
+
 # Boundary hardening contract
 
 Branch: `codex/boundary-hardening`, based on the Windows installation baseline.

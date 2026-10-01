@@ -1,3 +1,4 @@
+import { assertLocalPath } from '../../utils/local-path.js';
 import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -105,7 +106,6 @@ const IMAGE_CELL = /\.(png|jpe?g|webp|tiff?|psd|gif)$/i;
 function buildVariablesXml(columns: string[], dataRows: string[][]): string {
   const lines: string[] = [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    '<!DOCTYPE variables PUBLIC "-//Adobe//DTD Variables 1.0//EN" "variables.dtd">',
     '<variables xmlns:v="http://ns.adobe.com/Variables/1.0/">',
   ];
   for (const col of columns) {
@@ -198,6 +198,9 @@ async function runCsvToCards(
 
   const columns = rows[0].map((c) => c.trim()).filter(Boolean);
   const dataRows = rows.slice(1);
+  for (const cells of dataRows) {
+    for (const value of cells) if (IMAGE_CELL.test(value.trim())) assertLocalPath(value.trim());
+  }
   const xml = buildVariablesXml(columns, dataRows);
   const temporaryDir = mkdtempSync(join(tmpdir(), 'photoshop-mcp-datasets-'));
   const xmlPath = join(temporaryDir, 'variables.xml');

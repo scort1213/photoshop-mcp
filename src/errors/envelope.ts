@@ -3,6 +3,8 @@ import { recordMcpToolCall } from '../analytics/mcp-session.js';
 import type { ToolHandler } from '../core/tool-registry.js';
 
 export type PhotoshopErrorCode =
+  | 'cloud_disabled'
+  | 'local_path_required'
   | 'no_active_document'
   | 'no_active_layer'
   | 'layer_not_found'
@@ -46,6 +48,8 @@ const ERROR_PATTERNS: Array<{
   code: PhotoshopErrorCode;
   suggested_next_tool?: string;
 }> = [
+  { pattern: /cloud_disabled/i, code: 'cloud_disabled' },
+  { pattern: /local_path_required/i, code: 'local_path_required' },
   { pattern: /partial_completion/i, code: 'partial_completion', suggested_next_tool: 'photoshop_get_state' },
   { pattern: /backup_failed/i, code: 'backup_failed', suggested_next_tool: 'photoshop_get_state' },
   { pattern: /artboard_geometry_changed/i, code: 'artboard_geometry_changed', suggested_next_tool: 'photoshop_get_state' },

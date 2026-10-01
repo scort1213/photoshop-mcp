@@ -307,6 +307,7 @@ export function createSelectionTools(connection: PhotoshopConnection): ToolDefin
           'Do NOT use when: full background removal with mask — use photoshop_recipe_remove_background.\n\n' +
           'Returns: JSON { ok, summary, details: { selected, method } }.\n' +
           'Preconditions: PS ≥ 23, active document, non-Background active layer with a recognizable subject.\n' +
+          'Confirm Photoshop Settings/Preferences > Image Processing > Select Subject and Remove Background is set to Device before use; this tool does not change that setting.\n' +
           'Side effects: replaces current selection.',
         inputSchema: {
           type: 'object',

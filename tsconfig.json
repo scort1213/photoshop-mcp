@@ -20,6 +20,21 @@
     "noFallthroughCasesInSwitch": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["src/**/*"],
+  "include": [
+    "src/index.ts",
+    "src/api/**/*",
+    "src/core/**/*",
+    "src/errors/**/*",
+    "src/lib/**/*",
+    "src/platform/**/*",
+    "src/prompts/**/*",
+    "src/tools/**/*",
+    "src/types/**/*",
+    "src/utils/**/*",
+    "src/analytics/**/*",
+    "src/ui/cli.ts",
+    "src/ui/server.ts",
+    "src/ui/local-only.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }

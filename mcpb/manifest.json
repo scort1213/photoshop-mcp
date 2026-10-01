@@ -2,21 +2,21 @@
   "$schema": "https://raw.githubusercontent.com/anthropics/mcpb/main/schemas/mcpb-manifest-v0.4.schema.json",
   "manifest_version": "0.4",
   "name": "photoshop-mcp",
-  "display_name": "Photoshop MCP",
+  "display_name": "Photoshop MCP — local-only",
   "version": "0.0.0",
-  "description": "Control Adobe Photoshop from chat — atomic tools plus one-step recipes.",
-  "long_description": "Connect Claude Desktop to Adobe Photoshop. Remove backgrounds, retouch portraits, color grade, and batch export by asking in plain language. Requires Photoshop running on macOS or Windows. Unofficial community project, not affiliated with Adobe Inc.",
+  "description": "Local Photoshop editing; built-in cloud tools, analytics and standalone chat disabled.",
+  "long_description": "Controls local Photoshop on macOS and Windows. Select Subject / background removal require Device processing in Photoshop preferences. Custom scripts remain trusted and unsandboxed. Adobe licensing and background traffic are outside this integration policy.",
   "author": {
     "name": "Ali Sait Teke",
     "url": "https://alisait.com"
   },
-  "homepage": "https://photoshop-mcp.com",
+  "homepage": "https://github.com/scort1213/photoshop-mcp",
   "repository": {
     "type": "git",
-    "url": "https://github.com/alisaitteke/photoshop-mcp"
+    "url": "https://github.com/scort1213/photoshop-mcp"
   },
-  "documentation": "https://photoshop-mcp.com/docs/getting-started",
-  "support": "https://github.com/alisaitteke/photoshop-mcp/issues",
+  "documentation": "https://github.com/scort1213/photoshop-mcp/blob/codex/local-only/LOCAL_ONLY.md",
+  "support": "https://github.com/scort1213/photoshop-mcp/issues",
   "license": "MIT",
   "keywords": [
     "mcp",

@@ -1,11 +1,6 @@
 import { ToolDefinition, ToolResult } from '../../core/tool-registry.js';
-import { ExtendScriptSnippets } from '../../api/extendscript.js';
-import { getPhotoshopCapabilities } from '../../platform/capabilities.js';
 import { PhotoshopConnection } from '../../platform/connection.js';
-import {
-  parseGenerativeResult,
-  runGenerativeSnippet,
-} from '../generative/_shared.js';
+import { cloudDisabledResult } from '../../core/local-policy.js';
 import {
   clampInt,
   executeRecipe,
@@ -25,7 +20,7 @@ export function bindSkyBlend(connection: PhotoshopConnection): ToolDefinition {
         '\n' +
         'Users often say: replace sky, fix blown sky, better clouds, swap sky background.\n' +
         '\n' +
-        'Use when: the user provides a sky image path and native sky replacement is unavailable or manual blend is preferred.\n' +
+        'Use when: the user provides a local sky image for layer-and-mask compositing. This is a manual blend, not the native Sky Replacement algorithm.\n' +
         'Do NOT use when: no sky_image_path is available — ask the user for an absolute file path first.\n' +
         'Do NOT use when: fading the active subject layer only — use photoshop_recipe_gradient_fade.\n' +
         '\n' +
@@ -67,7 +62,7 @@ export function bindSkyBlend(connection: PhotoshopConnection): ToolDefinition {
           use_native_sky: {
             type: 'boolean',
             description:
-              'Try native Sky Replacement first when supported (default true when capable)',
+              'Native Sky Replacement is disabled; true is rejected. Omit or use false for local image and mask compositing.',
           },
         },
         required: ['sky_image_path'],
@@ -81,6 +76,7 @@ async function runSkyBlend(
   connection: PhotoshopConnection,
   args: Record<string, unknown>
 ): Promise<ToolResult> {
+  if (args.use_native_sky === true) return cloudDisabledResult('use_native_sky');
   const skyPath = typeof args.sky_image_path === 'string' ? args.sky_image_path.trim() : '';
   if (!skyPath) {
     return toolFailure({
@@ -88,58 +84,6 @@ async function runSkyBlend(
       code: 'invalid_argument',
       message: 'sky_image_path is required',
     });
-  }
-
-  const version = await connection.getVersion();
-  const caps = getPhotoshopCapabilities(version);
-  const tryNative = args.use_native_sky !== false && caps.features.sky_replacement_native;
-
-  if (tryNative) {
-    try {
-      const raw = await runGenerativeSnippet(
-        connection,
-        ExtendScriptSnippets.skyReplacement(skyPath)
-      );
-      const nativeResult = parseGenerativeResult(raw);
-      if (!nativeResult.isError) {
-        const text =
-          nativeResult.content[0]?.type === 'text' ? nativeResult.content[0].text : '{}';
-        try {
-          const body = JSON.parse(text) as Record<string, unknown>;
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    ...body,
-                    undo_history_states_consumed: 1,
-                    details: {
-                      ...(typeof body.details === 'object' && body.details ? body.details : {}),
-                      method: 'native_sky_replacement',
-                      sky_image_path: skyPath,
-                    },
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
-        } catch {
-          return nativeResult;
-        }
-      }
-      // A failed native edit can be partial. Never start a fallback write.
-      return nativeResult;
-    } catch (error) {
-      return toolFailure({
-          ok: false,
-          code: 'generative_unavailable',
-          message: error instanceof Error ? error.message : String(error),
-          suggested_next_tool: 'photoshop_get_capabilities',
-        });
-    }
   }
 
   const horizonPct = clampInt(args.horizon_pct, 0, 100, 50);

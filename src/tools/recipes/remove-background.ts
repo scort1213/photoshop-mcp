@@ -1,6 +1,7 @@
 import { ToolDefinition, ToolResult } from '../../core/tool-registry.js';
 import { PhotoshopConnection } from '../../platform/connection.js';
 import { PhotoshopDetector } from '../../platform/detector.js';
+import { cloudDisabledResult } from '../../core/local-policy.js';
 import { clampInt, executeRecipe, toolFailure } from './_shared.js';
 
 const TOOL_NAME = 'photoshop_recipe_remove_background';
@@ -20,6 +21,7 @@ export function bindRemoveBackground(connection: PhotoshopConnection): ToolDefin
         'Returns: { ok, summary, undo_history_states_consumed, details.method = select_subject | color_range_fallback }.\n' +
         '\n' +
         'Preconditions: PS ≥ 23 (Select Subject v2) for the default path; Color Range fallback still runs on uniform studio shots if Select Subject is loose or empty.\n' +
+        'Confirm Photoshop Settings/Preferences > Image Processing > Select Subject and Remove Background is set to Device before use; this recipe does not change that setting.\n' +
         'Side effects: attaches a pixel mask to the active layer; no pixels destroyed; one undo reverts everything.',
       inputSchema: {
         type: 'object',
@@ -41,7 +43,7 @@ export function bindRemoveBackground(connection: PhotoshopConnection): ToolDefin
           use_generative: {
             type: 'boolean',
             description:
-              'After masking, run generative edge cleanup on inverted background selection (default false)',
+              'Cloud edge cleanup is disabled; true is rejected. Omit or use false for Select Subject and a local mask.',
             default: false,
           },
         },
@@ -55,6 +57,7 @@ async function runRemoveBackground(
   connection: PhotoshopConnection,
   args: Record<string, unknown>
 ): Promise<ToolResult> {
+  if (args.use_generative === true) return cloudDisabledResult('use_generative');
   const feather = clampInt(args.feather_px, 0, 20, 0);
   const keepShadow = args.keep_shadow === true;
 

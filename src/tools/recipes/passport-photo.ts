@@ -36,6 +36,7 @@ export function bindPassportPhoto(connection: PhotoshopConnection): ToolDefiniti
         'Returns: { ok, summary, output_paths, details: { spec, width, height, sheet } }.\n' +
         '\n' +
         'Preconditions: PS ≥ 23 (Select Subject v2); active document with a single-person portrait.\n' +
+        'Confirm Photoshop Settings/Preferences > Image Processing > Select Subject and Remove Background is set to Device before use; this recipe does not change that setting.\n' +
         'Side effects: writes one JPEG (+ one sheet JPEG when make_sheet); source document is unchanged.',
       inputSchema: {
         type: 'object',

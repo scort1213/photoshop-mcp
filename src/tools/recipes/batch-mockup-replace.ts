@@ -1,3 +1,4 @@
+import { assertLocalPaths } from '../../utils/local-path.js';
 import { readdir, stat } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { extname, isAbsolute, join } from 'node:path';
@@ -115,6 +116,8 @@ async function runBatchMockupReplace(
     .filter((name) => SUPPORTED_ASSET_EXTS.has(extname(name).toLowerCase()))
     .sort()
     .map((name) => join(assetsDir, name));
+
+  assertLocalPaths(assets);
 
   if (assets.length === 0) {
     return toolFailure({

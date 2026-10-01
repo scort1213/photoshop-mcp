@@ -2,17 +2,17 @@
  * Fail if any doc reports a tool count that no longer matches the source.
  *
  * The numbers in README/docs are written by hand; site/data/tools.json is derived
- * from src/tools by generate-site-data.ts. This keeps the two in sync.
+ * from the runtime registry. Historical disabled tool source is not counted.
  *
  * Run: npm run verify:tool-counts
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execSync } from 'node:child_process';
+import { PhotoshopMCPServer } from '../src/core/server.js';
+import { PHOTOSHOP_RECIPE_TOOL_NAMES } from '../src/tools/recipes/index.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const DATA = join(ROOT, 'site', 'data', 'tools.json');
 
 const FILES = [
   'README.md',
@@ -25,14 +25,10 @@ const FILES = [
 ];
 
 function main(): void {
-  if (!existsSync(DATA)) {
-    execSync('npx tsx scripts/generate-site-data.ts', { cwd: ROOT, stdio: 'inherit' });
-  }
-  const data = JSON.parse(readFileSync(DATA, 'utf8')) as {
-    total: number;
-    atomic: number;
-    recipes: number;
-  };
+  // Constructing the registry does not initialize Adobe or start the transport.
+  const total = new PhotoshopMCPServer({ serverVersion: 'local-catalog-check' }).getToolCount();
+  const recipes = PHOTOSHOP_RECIPE_TOOL_NAMES.length;
+  const data = { total, recipes, atomic: total - recipes };
 
   const allowed = new Set([data.total, data.atomic, data.recipes]);
   const problems: string[] = [];

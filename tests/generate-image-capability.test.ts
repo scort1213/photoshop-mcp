@@ -1,30 +1,27 @@
-import { expect, it } from 'vitest';
-import { getPhotoshopCapabilities } from '../src/platform/capabilities.js';
+import { expect, it, vi } from 'vitest';
+import { getPhotoshopCapabilities, resolvePhotoshopCapabilities } from '../src/platform/capabilities.js';
 import { createGenerativeTools } from '../src/tools/generative-tools.js';
 import type { PhotoshopConnection } from '../src/platform/connection.js';
 
-it.each(['23.0.0', '25.0.0', '25.10.9', '2024', 'unknown'])(
-  'rejects Generate Image on %s before any document execution', async version => {
-    let executions = 0;
-    const connection = {
-      getVersion: async () => version,
-      executeScript: async () => { executions++; throw new Error('must not execute'); },
-    } as unknown as PhotoshopConnection;
-    const tool = createGenerativeTools(connection).find(x => x.tool.name === 'photoshop_generate_image')!;
-    const result = await tool.handler({ prompt: 'test' });
-    expect(result.isError).toBe(true);
-    expect(JSON.stringify(result)).toContain('version_unsupported');
-    expect(JSON.stringify(result)).toContain('generate_image');
-    expect(executions).toBe(0);
+it.each(['23.0.0', '25.0.0', '25.11.0', '27.0.0', '2026', 'unknown'])(
+  'never advertises cloud features on %s', async version => {
+    const caps = getPhotoshopCapabilities(version);
+    for (const feature of ['generative_fill', 'generate_image', 'generative_remove', 'generative_expand', 'generative_upscale', 'sky_replacement_native', 'neural_filters', 'uxp_bridge_reachable', 'uxp_plugin_api'] as const) {
+      expect(caps.features[feature]).toBe(false);
+    }
+    expect(await resolvePhotoshopCapabilities(version)).toEqual(caps);
   },
 );
 
-it.each(['25.11.0', '25.12.0', '26.0.0'])('recognizes Generate Image version eligibility on %s', version => {
-  expect(getPhotoshopCapabilities(version).features.generate_image).toBe(true);
-});
-
-it('does not confuse earlier Generative Fill eligibility with Generate Image', () => {
-  const caps = getPhotoshopCapabilities('25.10.0').features;
-  expect(caps.generative_fill).toBe(true);
-  expect(caps.generate_image).toBe(false);
+it('refuses every exported legacy cloud handler before any Adobe call', async () => {
+  const getVersion = vi.fn(() => { throw new Error('must not detect Adobe'); });
+  const executeScript = vi.fn(() => { throw new Error('must not execute Adobe'); });
+  const connection = { getVersion, executeScript } as unknown as PhotoshopConnection;
+  for (const definition of createGenerativeTools(connection)) {
+    const result = await definition.handler({ prompt: 'test' });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result)).toContain('cloud_disabled');
+  }
+  expect(getVersion).not.toHaveBeenCalled();
+  expect(executeScript).not.toHaveBeenCalled();
 });
