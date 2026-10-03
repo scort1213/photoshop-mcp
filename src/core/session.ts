@@ -1,5 +1,5 @@
 import { Logger } from '../utils/logger.js';
-import { capture, captureAnalyticsMilestoneOnce, identifyPhotoshopVersion } from '../analytics/index.js';
+import { capture, captureAnalyticsMilestoneOnce } from '../analytics/index.js';
 import { PhotoshopConnection } from '../platform/connection.js';
 
 export interface SessionConfig {
@@ -14,6 +14,9 @@ export class Session {
   private config: SessionConfig;
   private isConnected: boolean = false;
   private lastActivity: Date;
+  private disconnecting = false;
+  private disconnectPromise?: Promise<void>;
+  private pendingConnections = new Set<Promise<boolean>>();
 
   constructor(config: SessionConfig = {}) {
     this.logger = new Logger('Session');
@@ -36,16 +39,28 @@ export class Session {
     }
   }
 
-  async connect(): Promise<boolean> {
+  connect(): Promise<boolean> {
+    if (this.disconnecting) return Promise.resolve(false);
+    const pending = Promise.resolve().then(() => this.connectOnce());
+    this.pendingConnections.add(pending);
+    void pending.then(
+      () => this.pendingConnections.delete(pending),
+      () => this.pendingConnections.delete(pending)
+    );
+    return pending;
+  }
+
+  private async connectOnce(): Promise<boolean> {
+    if (this.disconnecting) return false;
     try {
       this.logger.info('Connecting to Photoshop...');
       const connected = await this.connection.ping();
+      if (this.disconnecting) return false;
       
       if (connected) {
         this.isConnected = true;
         this.updateActivity();
         this.logger.info('Successfully connected to Photoshop');
-        void this.refreshPhotoshopVersionOnPerson();
         return true;
       } else {
         this.isConnected = false;
@@ -63,6 +78,7 @@ export class Session {
     this.logger.info('Attempting to reconnect...');
     
     for (let attempt = 1; attempt <= (this.config.reconnectAttempts || 3); attempt++) {
+      if (this.disconnecting) return false;
       this.logger.debug(`Reconnect attempt ${attempt}/${this.config.reconnectAttempts}`);
       
       const connected = await this.connect();
@@ -80,9 +96,14 @@ export class Session {
     return false;
   }
 
-  async disconnect(): Promise<void> {
-    this.logger.info('Disconnecting session...');
-    this.isConnected = false;
+  disconnect(): Promise<void> {
+    if (!this.disconnectPromise) {
+      this.logger.info('Disconnecting session...');
+      this.disconnecting = true;
+      this.isConnected = false;
+      this.disconnectPromise = Promise.allSettled([...this.pendingConnections]).then(() => undefined);
+    }
+    return this.disconnectPromise;
   }
 
   getConnection(): PhotoshopConnection {
@@ -113,15 +134,6 @@ export class Session {
       captureAnalyticsMilestoneOnce('mcp_photoshop_first_connected', {
         event_source: 'mcp',
       });
-    }
-  }
-
-  private async refreshPhotoshopVersionOnPerson(): Promise<void> {
-    try {
-      const version = await this.connection.getVersion();
-      identifyPhotoshopVersion(version);
-    } catch {
-      // Best-effort person enrichment only.
     }
   }
 

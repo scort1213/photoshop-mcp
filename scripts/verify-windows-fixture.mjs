@@ -12,7 +12,7 @@ import { freemem } from 'node:os';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { NaturalExitTransport as StdioClientTransport } from './local-session.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const TEST_TEXT = 'Windows MCP 中文改字验收';
@@ -420,8 +420,21 @@ async function main(config) {
         failure ??= error;
       }
     }
-    try { if (client) await client.close(); else if (transport) await transport.close(); }
-    catch { summary.transportShutdown = 'failed'; }
+    try {
+      if (client) await client.close();
+      // The SDK forgets a transport that already closed; still validate its exit.
+      if (transport) await transport.close();
+      if (transport?.exit) {
+        summary.transportShutdown = 'passed';
+        summary.shutdown = { ...transport.exit };
+      }
+    } catch (error) {
+      summary.transportShutdown = 'failed';
+      summary.shutdownError = { code: error?.code, message: String(error?.message ?? error).slice(0, 2000), pid: error?.pid ?? transport?.pid };
+      summary.status = 'failed';
+      failure ??= error;
+      process.exitCode = 1;
+    }
     summary.finished = new Date().toISOString();
     summary.availableMemoryBytesAfter = freemem();
     await writeFile(join(output, 'summary.json'), JSON.stringify(summary, null, 2) + '\n', { flag: 'wx', mode: 0o600 });

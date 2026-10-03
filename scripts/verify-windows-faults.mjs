@@ -6,11 +6,11 @@
  * Usage: node scripts/verify-windows-faults.mjs --output ABSOLUTE_NEW_DIRECTORY
  */
 import assert from 'node:assert/strict';
-import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { NaturalExitTransport } from './local-session.mjs';
 import { resolveLocalPath, toAdobePath } from '../dist/utils/local-path.js';
 
 const args = process.argv.slice(2);
@@ -42,27 +42,14 @@ const report = {
 const delay = (ms) => new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 const sessions = [];
 
-// The SDK's default close escalates to SIGTERM/SIGKILL. This runner permits EOF
-// shutdown only. _process is the current SDK's subprocess handle; fail closed if
-// an SDK change removes it. No private user information is read from the child.
-class EofOnlyTransport extends StdioClientTransport {
-  async close() {
-    const child = this._process;
-    if (!child) return;
-    const pid = child.pid;
-    const closed = new Promise((resolveClose) => child.once('close', resolveClose));
-    if (child.exitCode === null) child.stdin?.end();
-    let timer;
-    await Promise.race([closed, new Promise((resolveWait) => { timer = setTimeout(resolveWait, 5000); })]);
-    clearTimeout(timer);
-    const exited = child.exitCode !== null || child.signalCode !== null;
-    report.shutdown.push({ pid, method: 'stdin EOF only', exited, exitCode: child.exitCode });
-    if (!exited) {
-      child.unref();
-      child.stdin?.unref?.(); child.stdout?.unref?.(); child.stderr?.unref?.();
-      report.remainingMcpProcessIds = [...(report.remainingMcpProcessIds || []), pid];
-    }
-  }
+async function closeSession(session) {
+  if (session.closed) return session.closed;
+  await session.client.close();
+  // SDK forgets an already exited transport, so validate its exit explicitly.
+  const result = await session.transport.close();
+  session.closed = result;
+  report.shutdown.push({ client: session.label, method: 'stdin EOF only', ...result });
+  return result;
 }
 
 function payload(result) {
@@ -105,7 +92,7 @@ async function call(session, name, arguments_ = {}, expectedError) {
   return { result, data, elapsedMs };
 }
 async function connect(label) {
-  const transport = new EofOnlyTransport({ command: process.execPath,
+  const transport = new NaturalExitTransport({ command: process.execPath,
     args: [join(checkout, 'dist', 'index.js')], cwd: checkout,
     env: { ...process.env }, stderr: 'pipe' });
   transport.stderr?.on('data', (chunk) => process.stderr.write(chunk));
@@ -113,7 +100,7 @@ async function connect(label) {
   const session = { label, client, transport };
   sessions.push(session);
   await client.connect(transport);
-  assert.ok(transport._process?.stdin, 'Installed SDK does not expose the expected EOF shutdown handle.');
+  assert.ok(transport.pid, 'The local transport did not record its child PID.');
   return session;
 }
 async function lines() {
@@ -174,6 +161,18 @@ try {
     firstElapsedMs: timedOut.value.elapsedMs, queuedElapsedMs: queued.elapsedMs,
   });
 
+  // Deliberately close the first MCP process while its actual Adobe call is
+  // still running. EOF must drain the native tail, not abandon its lease.
+  assert.deepEqual(await lines(), ['run'], 'Native work already finished; this run did not exercise shutdown during the call.');
+  assert.ok((await stat(join(report.safetyDirectory, 'active.json'))).size > 0);
+  const closingAt = Date.now();
+  const drainedExit = await closeSession(a);
+  report.shutdownDuringTimeout = { elapsedMs: Date.now() - closingAt, ...drainedExit };
+  assert.deepEqual(await lines(), ['run', 'late-completion']);
+  await assert.rejects(stat(join(report.safetyDirectory, 'active.json')), { code: 'ENOENT' });
+  assert.ok((await stat(join(report.safetyDirectory, 'uncertain.json'))).isFile());
+  check('EOF waited for real late completion, released the lease, and preserved quarantine', report.shutdownDuringTimeout);
+
   // These read-only calls queue behind the real bridge and prove it has exited.
   report.afterTimeout = await assertOnlyOwned(b, 'late-completion');
   const completed = await lines();
@@ -190,7 +189,7 @@ try {
   assert.deepEqual(await lines(), completed);
   check('Explicit recovery preserved late completion and did not replay or roll it back');
 
-  await call(a, 'photoshop_execute_script', { ...target,
+  await call(b, 'photoshop_execute_script', { ...target,
     code: `${guard}\napp.activeDocument.activeLayer.name = 'partial-change'; throw new Error('intentional_fault_after_partial_change');`,
   }, /intentional_fault_after_partial_change/);
   report.afterPartialFailure = await assertOnlyOwned(b, 'partial-change');
@@ -221,8 +220,12 @@ try {
   // No recovery or document close occurs here. EOF is normal MCP shutdown, not
   // a process kill; the SDK fallback that sends kill signals is never invoked.
   for (const session of sessions) {
-    try { await session.client.close(); }
-    catch (error) { report.shutdown.push({ client: session.label, error: String(error) }); }
+    try { await closeSession(session); }
+    catch (error) {
+      report.shutdown.push({ client: session.label, error: String(error), pid: session.transport.pid });
+      report.status = 'failed';
+      process.exitCode = 1;
+    }
   }
   report.finishedAt = new Date().toISOString();
   await writeFile(summaryPath, JSON.stringify(report, null, 2) + '\n', { flag: 'wx' });

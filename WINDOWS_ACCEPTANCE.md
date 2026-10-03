@@ -1,5 +1,9 @@
 # Windows acceptance: 1.7.14-windows.1
 
+This is the original scoped acceptance. A downstream caller subsequently exposed
+an EOF/lease race not covered here. See [WINDOWS_LIFECYCLE_FIX.md](WINDOWS_LIFECYCLE_FIX.md)
+for the `1.7.14-windows.2` repair, new regression tests and real shutdown evidence.
+
 Tested on 2026-10-03 UTC with Windows, Photoshop 2022 **23.0.0**, Node
 **24.19.0**, MCP SDK **1.30.0**, and the local-only source baseline
 `cf29ab654b5362759316edad1be98c4c01769779`.

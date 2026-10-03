@@ -11,7 +11,7 @@ import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { NaturalExitTransport as StdioClientTransport } from './local-session.mjs';
 
 const argv = process.argv.slice(2);
 if (argv.includes('--help')) {
@@ -383,8 +383,14 @@ try {
   process.exitCode = 1;
 } finally {
   // Disconnect only. Do not infer success or discard any failed Photoshop document.
-  try { await client.close(); } catch (error) {
+  try {
+    await client.close();
+    // The SDK forgets a transport that already closed; still validate its exit.
+    await transport.close();
+    if (transport.exit) summary.shutdown = { ...transport.exit };
+  } catch (error) {
     summary.closeError = String(error);
+    summary.shutdownError = { code: error?.code, message: String(error?.message ?? error), pid: error?.pid ?? transport.pid };
     summary.status = 'failed';
     process.exitCode = 1;
   }

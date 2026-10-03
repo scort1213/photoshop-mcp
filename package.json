@@ -1,6 +1,6 @@
 {
   "name": "@alisaitteke/photoshop-mcp",
-  "version": "1.7.14-windows.1",
+  "version": "1.7.14-windows.2",
   "description": "Local-only MCP server for Adobe Photoshop. No standalone cloud chat UI or analytics.",
   "main": "dist/index.js",
   "type": "module",

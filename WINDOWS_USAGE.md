@@ -3,7 +3,8 @@
 This Windows branch is based on the local-only `master` commit
 `cf29ab654b5362759316edad1be98c4c01769779`. It retains the boundary-hardening
 history, with Windows-specific repairs. Its server version is
-`1.7.14-windows.1`. Do not substitute the upstream npm package.
+`1.7.14-windows.2`. Keep the previously accepted Windows/Mac checkouts intact;
+install lifecycle changes in a separate checkout. Do not substitute the upstream npm package.
 
 ## Build and connect
 
@@ -37,8 +38,9 @@ tool menu has reloaded.
 ## Direct calls without a native host reload
 
 `scripts/call-local.mjs` sends one explicit request to this checkout, writes the
-response to a new local JSON file, and closes the client. It does not retry or
-recover failed operations. It inherits the shell environment; it does not read
+response to a new local JSON file, then ends stdin and waits for the server to
+exit naturally. It never sends a kill signal and does not retry or recover failed
+operations. It inherits the shell environment; it does not read
 the client's TOML configuration. Set the same runtime paths in that shell. Use a request
 file to avoid PowerShell quoting and Unicode interpolation errors:
 
@@ -55,8 +57,91 @@ node scripts/call-local.mjs --request 'D:\work\request.json' --output 'D:\work\r
 ```
 
 For discovery, use `{"method":"tools/list"}` or `{"method":"prompts/list"}`.
-Image responses are saved alongside the JSON. Only pass trusted local JSX,
-local assets/fonts and local output filenames. These scripts are not a sandbox.
+The output contains the original response, final status, server PID and shutdown
+result. Lifecycle events are saved to `<output>.events.jsonl`; image responses
+are saved alongside the JSON. The response is persisted before shutdown, so a
+shutdown failure cannot hide a successful or failed tool response. Existing
+outputs and evidence files are refused before starting a server. Keep this raw
+evidence private; it can contain document paths and server diagnostics.
+
+## One persistent session for a workflow
+
+Use `scripts/local-session.mjs` for discovery, editing, preview and saving over
+one server process. Its `openLocalSession(config?, onEvent?)` function (also
+exported as `openPhotoshopSession`) returns `server`, `pid`, `request(body)` and
+`close()`. The default command is the current Node executable with this checkout's
+`dist/index.js`. Optional `command`, `entry` and `cwd` must be absolute paths;
+optional `env` overrides are merged with the caller environment. Never switch
+shared runtime roots to work around a lease error. Neither helper reads or changes
+shared lease files, credentials, or the native client's configuration.
+
+For example, save a workflow module at this checkout's root and supply a new
+absolute evidence directory whose parent already exists:
+
+```javascript
+import { appendFileSync, mkdirSync } from 'node:fs';
+import { isAbsolute, join } from 'node:path';
+import { openLocalSession, isErrorResponse } from './scripts/local-session.mjs';
+
+const output = process.argv[2];
+if (!output || !isAbsolute(output)) throw new Error('An absolute evidence directory is required.');
+mkdirSync(output); // Refuse existing evidence.
+const record = (name, value) => appendFileSync(join(output, name), JSON.stringify(value) + '\n');
+const session = await openLocalSession({}, (event) => record('session.jsonl', event));
+try {
+  async function request(body) {
+    record('calls.jsonl', { phase: 'request', pid: session.pid, body });
+    try {
+      const response = await session.request(body);
+      record('calls.jsonl', { phase: 'response', pid: session.pid, response });
+      if (isErrorResponse(response)) throw new Error('Tool error; inspect the recorded response.');
+      return response;
+    } catch (error) {
+      record('calls.jsonl', { phase: 'exception', message: error.message });
+      throw error;
+    }
+  }
+  await request({ method: 'tools/list' });
+  await request({ method: 'tools/call', params: { name: 'photoshop_get_state', arguments: {} } });
+  // Continue the authorized workflow here after verifying the document and tool schemas.
+} finally {
+  try { record('session.jsonl', { type: 'closed', ...await session.close() }); }
+  catch (error) {
+    record('session.jsonl', { type: 'shutdown_failed', code: error.code, pid: error.pid, message: error.message });
+    throw error;
+  }
+}
+```
+
+Requests are serialized. A tool response with `isError:true` or a JSON error
+envelope containing `ok:false` is returned unchanged, then the session refuses
+queued and later requests without dispatching them. A transport exception also
+stops subsequent requests. Persist and inspect the original failure; do not
+silently open another session to replay it. Custom JSX remains trusted local
+code, not a sandbox. For image calls, save the returned image bytes and replace
+base64 in long-term evidence with the local filename.
+
+The default caller deadline is 120 seconds (`requestTimeoutMs`); this does not
+extend the server's normal operation deadline (usually 30 seconds, with explicit
+tool overrides where advertised). A server `outcome_unknown` response or a
+caller timeout does not prove the underlying Adobe job has stopped. `close()`
+first stops accepting requests and waits for the accepted queue, then sends EOF.
+The repaired server drains remaining jobs before exiting. No Session startup
+stderr message or observed idle window is required.
+
+Natural shutdown has a separate 150-second reporting deadline (`closeTimeoutMs`).
+If it expires, `shutdown_blocked` reports the server PID and preserves the process;
+there is no signal escalation, lock cleanup, recovery, or automatic retry. Open
+stdio handles can keep the caller alive until the server eventually exits. Keep
+the caller, server and evidence available for inspection. Closing this MCP session
+does not close a Photoshop document or quit Photoshop.
+
+For an existing SDK-based runner, import `NaturalExitTransport` from this helper
+instead of `StdioClientTransport`. It accepts `command`, `args`, `cwd`, `env` and
+optional `closeTimeoutMs`, and supports `pid` and piped `stderr`. Even SDK
+`client.close()` then uses EOF-only natural shutdown; it never calls the SDK's
+default termination escalation. This transport alone does not supply the
+persistent helper's queue or stop-after-error behavior.
 
 ## Text editing and layered PSD skills
 

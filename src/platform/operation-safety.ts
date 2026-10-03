@@ -30,6 +30,15 @@ interface OperationScope {
 }
 const operationLease = new AsyncLocalStorage<OperationScope>();
 
+// Public operation promises can reject on deadline while their native bridge
+// and lease cleanup are still running. Shutdown must await these job tails.
+const operationCompletions = new Set<Promise<void>>();
+
+/** Drain this process's accepted jobs only; never inspect or alter another client's lease. */
+export async function drainOperationRunners(): Promise<void> {
+  while (operationCompletions.size) await Promise.all([...operationCompletions]);
+}
+
 function timeoutError(scope?: OperationScope): Error {
   const paths = scope?.inspectionPaths.size
     ? '; inspection_paths=' + JSON.stringify([...scope.inspectionPaths])
@@ -194,7 +203,17 @@ export class OperationRunner {
         if (failure) reject(failure);
         else if (!expired) resolve(result as T);
       });
-      this.queue.push(job);
+      let complete!: () => void;
+      const completion = new Promise<void>((done) => { complete = done; });
+      operationCompletions.add(completion);
+      this.queue.push(async () => {
+        try {
+          await job();
+        } finally {
+          operationCompletions.delete(completion);
+          complete();
+        }
+      });
       void this.processQueue();
     });
   }

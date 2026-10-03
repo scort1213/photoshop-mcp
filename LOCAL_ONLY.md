@@ -60,7 +60,7 @@ See [acceptance evidence](LOCAL_ONLY_ACCEPTANCE.md) for the current verification
 
 The default home is the user's local `.photoshop-mcp` directory. `PHOTOSHOP_MCP_HOME`, `PHOTOSHOP_SAFETY_DIR`, `PHOTOSHOP_RECOVERY_DIR` and `PHOTOSHOP_PATH` overrides must be unambiguous native absolute local paths. Internal temporary files do not use `TMPDIR`, `TEMP` or `TMP`. Every new job rechecks its roots.
 
-On Windows, the current fail-closed system-tool bootstrap requires Node and the real `SystemRoot` on the same drive; a different drive or linked system directory produces a configuration error without a PATH/network fallback. Windows real-app acceptance is recorded separately.
+On Windows, Node may reside on a different local drive from Windows. System executables are resolved through the real `SystemRoot` anchored to `SystemDrive`; linked system directories are rejected without a PATH/network fallback. Windows real-app acceptance is recorded separately.
 
 On macOS, automatic installation discovery is restricted to the verified local `/Applications` directory. For a different local installation, set `PHOTOSHOP_PATH` explicitly.
 

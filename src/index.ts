@@ -19,6 +19,8 @@ const logger = new Logger('Main');
 
 let mcpServer: PhotoshopMCPServer | null = null;
 let shuttingDown = false;
+let shutdownPromise: Promise<void> | undefined;
+let shutdownExitCode = 0;
 
 async function main() {
   try {
@@ -28,8 +30,10 @@ async function main() {
 
     mcpServer = new PhotoshopMCPServer({ serverVersion: getAppVersion() });
     await mcpServer.start();
+    if (shuttingDown) return;
 
     const photoshopVersion = await mcpServer.getPhotoshopVersion();
+    if (shuttingDown) return;
     identifyAnalyticsPerson({
       usage_surface: 'mcp',
       event_source: 'mcp',
@@ -52,14 +56,19 @@ async function main() {
       error_code: 'startup_failed',
       event_source: 'mcp',
     });
-    await shutdownAnalytics();
-    process.exit(1);
+    await handleShutdown('error', 1);
   }
 }
 
-async function handleShutdown(signal: string): Promise<void> {
-  if (shuttingDown) return;
+function handleShutdown(signal: string, exitCode = 0): Promise<void> {
+  if (exitCode !== 0) shutdownExitCode = exitCode;
+  if (shutdownPromise) return shutdownPromise;
   shuttingDown = true;
+  shutdownPromise = finishShutdown(signal);
+  return shutdownPromise;
+}
+
+async function finishShutdown(signal: string): Promise<void> {
 
   logger.info(`Received ${signal}, shutting down`);
 
@@ -72,15 +81,23 @@ async function handleShutdown(signal: string): Promise<void> {
           ? 'sigint'
           : 'error';
 
-  if (mcpServer) {
-    await mcpServer.stop();
-    mcpServer = null;
-  }
+  try {
+    if (mcpServer) {
+      await mcpServer.stop();
+      mcpServer = null;
+    }
 
-  onMcpClientDisconnected();
-  endMcpAnalyticsSession(reason);
-  await shutdownAnalytics();
-  process.exit(0);
+    onMcpClientDisconnected();
+    endMcpAnalyticsSession(reason);
+    await shutdownAnalytics();
+  } catch (error) {
+    // A failed drain is not permission to force an exit while Adobe may still
+    // be running. Preserve state and report failure; never kill the bridge.
+    process.exitCode = 1;
+    logger.error('Shutdown did not complete; inspect application and lease state:', error);
+    return;
+  }
+  process.exit(shutdownExitCode);
 }
 
 process.on('SIGINT', () => {

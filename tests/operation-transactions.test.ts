@@ -13,6 +13,8 @@ import {
   assertOperationActive,
   assertSafe,
   clearQuarantine,
+  drainOperationRunners,
+  OperationRunner,
   runRecoveryOperation,
 } from '../src/platform/operation-safety.js';
 import { atomicSave } from '../src/utils/atomic-save.js';
@@ -26,11 +28,25 @@ vi.mock('../src/utils/local-path.js', async (importOriginal) => ({
   resolveLocalPath: (path: string) => path,
   getLocalTempRoot: () => process.env.PHOTOSHOP_SAFETY_DIR!,
 }));
-const verification = vi.hoisted(() => ({ pause: undefined as undefined | (() => Promise<void>) }));
+const verification = vi.hoisted(() => ({
+  pause: undefined as undefined | (() => Promise<void>),
+  pauseLeaseOwner: undefined as undefined | (() => Promise<void>),
+}));
 vi.mock('node:fs/promises', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:fs/promises')>();
   return {
     ...real,
+    open: async (...args: Parameters<typeof real.open>) => {
+      const file = await real.open(...args);
+      if (String(args[0]).endsWith('active.json') && args[1] === 'wx' && verification.pauseLeaseOwner) {
+        const write = file.writeFile.bind(file);
+        file.writeFile = async (...values: Parameters<typeof file.writeFile>) => {
+          await verification.pauseLeaseOwner?.();
+          return write(...values);
+        };
+      }
+      return file;
+    },
     stat: async (...args: Parameters<typeof real.stat>) => {
       if (
         String(args[0]).includes('.photoshop-mcp-save-') &&
@@ -87,6 +103,7 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   verification.pause = undefined;
+  verification.pauseLeaseOwner = undefined;
   delete process.env.PHOTOSHOP_SAFETY_DIR;
   await rm(root, { recursive: true, force: true });
 });
@@ -103,6 +120,33 @@ async function waitUnlocked() {
   }
   throw new Error('test bridge did not release its lease');
 }
+
+it('drains a job paused between exclusive lease creation and owner publication', async () => {
+  const publishing = deferred();
+  const finishPublication = deferred();
+  verification.pauseLeaseOwner = async () => {
+    publishing.resolve();
+    await finishPublication.promise;
+  };
+  let calls = 0;
+  const operation = access.run('read', () => new OperationRunner().run(async () => ++calls));
+  await publishing.promise;
+  let drained = false;
+  const drain = drainOperationRunners().then(() => { drained = true; });
+  try {
+    expect((await stat(join(root, 'safety', 'active.json'))).size).toBe(0);
+    await delay(10);
+    expect(drained).toBe(false);
+    expect(calls).toBe(0);
+  } finally {
+    finishPublication.resolve();
+    await operation;
+    await drain;
+  }
+  expect(calls).toBe(1);
+  expect(drained).toBe(true);
+  await expect(stat(join(root, 'safety', 'active.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+});
 
 describe.each(['mac', 'windows'] as const)('%s shared execution boundary', (platform) => {
   it('counts queued time toward the deadline and never dispatches expired work', async () => {
@@ -139,6 +183,10 @@ describe.each(['mac', 'windows'] as const)('%s shared execution boundary', (plat
     const result = first.catch((error) => error as Error);
     await running.promise;
     expect(((await result) as Error).message).toContain('outcome_unknown');
+    let drained = false;
+    const drain = drainOperationRunners().then(() => { drained = true; });
+    await delay(10);
+    expect(drained).toBe(false);
     await expect(acquireLease(Date.now() + 40)).rejects.toThrow('queue_timeout');
     await expect(
       runRecoveryOperation(async () => {
@@ -146,7 +194,9 @@ describe.each(['mac', 'windows'] as const)('%s shared execution boundary', (plat
       }, 40)
     ).rejects.toThrow('queue_timeout');
     finish.resolve();
-    await waitUnlocked();
+    await drain;
+    expect(drained).toBe(true);
+    await expect(stat(join(root, 'safety', 'active.json'))).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(assertSafe()).rejects.toThrow('outcome_unknown');
     expect(await access.run('read', () => executor.execute('inspect'))).toBe('inspect');
     await runRecoveryOperation(async () => {

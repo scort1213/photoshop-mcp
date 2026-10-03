@@ -1,7 +1,8 @@
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
-import { access, assertOperationActive, runRecoveryOperation, clearQuarantine, documentManaged, managedMutation, operationContext } from '../platform/operation-safety.js';
+import { access, assertOperationActive, runRecoveryOperation, clearQuarantine, documentManaged, managedMutation, operationContext, drainOperationRunners } from '../platform/operation-safety.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
@@ -55,6 +56,10 @@ export class PhotoshopMCPServer {
   private toolRegistry: ToolRegistry;
   private promptRegistry: PromptRegistry;
   private session: Session;
+  private stopping = false;
+  private startPromise?: Promise<void>;
+  private stopPromise?: Promise<void>;
+  private pendingTools = new Set<Promise<unknown>>();
 
   constructor(options: PhotoshopMCPServerOptions) {
     this.logger = new Logger('PhotoshopMCPServer');
@@ -208,7 +213,7 @@ export class PhotoshopMCPServer {
       return await this.promptRegistry.get(name, args);
     });
 
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    this.server.setRequestHandler(CallToolRequestSchema, (request) => this.acceptToolRequest(async () => {
       const toolName = request.params.name;
       const started = Date.now();
       this.logger.debug(`Tool called: ${toolName}`);
@@ -229,7 +234,21 @@ export class PhotoshopMCPServer {
         }
         throw error;
       }
-    });
+    }));
+  }
+
+  private acceptToolRequest<T>(body: () => Promise<T>): Promise<T> {
+    if (this.stopping)
+      return Promise.reject(new Error('server_stopping: no new Photoshop operation was accepted'));
+    // Register accepted work before invoking it, so shutdown cannot miss a
+    // handler that is still detecting Adobe or preparing its first bridge call.
+    const request = Promise.resolve().then(body);
+    this.pendingTools.add(request);
+    void request.then(
+      () => this.pendingTools.delete(request),
+      () => this.pendingTools.delete(request)
+    );
+    return request;
   }
 
   private async pingPhotoshop() {
@@ -270,40 +289,56 @@ export class PhotoshopMCPServer {
   }
 
   async getPhotoshopVersion(): Promise<string | undefined> {
-    if (!this.session.getConnectionStatus()) return undefined;
-
-    try {
-      const version = await this.session.getConnection().getVersion();
-      if (!version || version === 'Unknown') return undefined;
-      return version;
-    } catch {
-      return undefined;
-    }
+    // Startup metadata must never dispatch an Adobe operation. Explicit tools
+    // perform their own version checks; this accessor only reads their cache.
+    const version = this.session.getConnection().getPhotoshopInfo()?.version;
+    return version && version !== 'Unknown' ? version : undefined;
   }
 
-  async start() {
+  start(transport: Transport = new StdioServerTransport()): Promise<void> {
+    if (this.stopping) return Promise.reject(new Error('server_stopping: cannot start a stopped server'));
+    // Publish the startup barrier before invoking transport code, which may
+    // synchronously signal closure while its start promise is still pending.
+    this.startPromise ??= Promise.resolve().then(() => this.startTransport(transport));
+    return this.startPromise;
+  }
+
+  private async startTransport(transport: Transport): Promise<void> {
     validateRuntimePaths();
     this.server.oninitialized = () => {
       onMcpClientConnected(this.server.getClientVersion());
     };
     this.server.onclose = () => {
       onMcpClientDisconnected();
+      void this.stop().catch(error => this.logger.error('MCP shutdown did not complete:', error));
     };
 
-    const transport = new StdioServerTransport();
     await this.server.connect(transport);
 
-    // Adobe discovery/COM can block or fail while the application is unavailable.
-    // Expose the protocol first; tool calls retain their own connection checks.
-    void this.session.initialize().catch(error => {
-      this.logger.error('Adobe initialization failed; MCP remains available:', error);
-    });
+    // Protocol discovery remains immediate. Only explicit tool requests may
+    // perform Adobe discovery or COM work; there is no detached initialization.
 
-    this.logger.info('MCP Server connected via stdio');
+    if (!this.stopping) this.logger.info('MCP Server connected via stdio');
   }
 
-  async stop() {
+  stop(): Promise<void> {
+    if (!this.stopPromise) {
+      this.stopping = true;
+      this.stopPromise = this.finishStop();
+    }
+    return this.stopPromise;
+  }
+
+  private async finishStop(): Promise<void> {
+    // A connect failure may still have installed transport listeners. Wait for
+    // that attempt to settle before draining accepted work and closing it.
+    await this.startPromise?.catch(() => undefined);
+    await Promise.allSettled([...this.pendingTools]);
     await this.session.disconnect();
+    // A timeout can return an error envelope while its native bridge still
+    // owns the lease. Public request completion is not an execution barrier.
+    await drainOperationRunners();
+    await this.server.close();
     this.logger.info('MCP Server stopped');
   }
 }
