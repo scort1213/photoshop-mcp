@@ -83,6 +83,12 @@ short simulated handshake deadline; only that test timing was corrected. A
 separate deterministic test reproduced a transport error between requests and
 verified that the repaired caller refuses the next dispatch.
 
+The first remote Windows run also exposed an existing UXP test's 50 ms budget
+expiring during real lease/quarantine filesystem preparation, before the command
+entered the queue that the test intended to exercise. That test now controls the
+deadline clock during preparation while retaining the real timeout, filesystem
+cleanup and HTTP reconnect assertions. Production deadlines are unchanged.
+
 Private raw responses, process IDs, sentinel files and shutdown records remain
 outside the repository. The earlier broad Windows evidence remains in
 [WINDOWS_ACCEPTANCE.md](WINDOWS_ACCEPTANCE.md), with its original version and scope.

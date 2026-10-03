@@ -2,7 +2,7 @@ import { beforeAll, afterAll, expect, it, vi } from 'vitest';
 
 // Keep dispatch deadlines independent of mount-command I/O; local-path.test.ts covers path policy.
 vi.mock('../src/utils/local-path.js', () => ({ assertLocalPath: () => undefined, resolveLocalPath: (path: string) => path }));
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 let bridge: typeof import('../src/platform/uxp-bridge-server.js');
@@ -33,11 +33,20 @@ it('refuses legacy plugins that cannot enforce document targeting', async () => 
   expect(state.pluginConnected).toBe(false);
 });
 it('removes timed-out undelivered commands before a plugin reconnects', async () => {
-  const result = await bridge.invokeUxpBridge('must-not-run', {}, 50);
-  expect(result.error).toBe('uxp_queue_timeout');
+  // This case exercises expiry after enqueue, not the preparation deadline.
+  // Freeze only the clock so real lease/quarantine I/O cannot spend its 50 ms
+  // budget on slow CI disks. The real timer still expires the queued command.
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now());
+  try {
+    const result = await bridge.invokeUxpBridge('must-not-run', {}, 50);
+    expect(result.error).toBe('uxp_queue_timeout');
+  } finally {
+    clock.mockRestore();
+  }
   expect((await fetch(`http://127.0.0.1:${port}/poll?protocol=2`)).status).toBe(204);
   const state = await (await fetch(`http://127.0.0.1:${port}/health`)).json();
   expect(state.pending).toBe(0);
+  expect(await readdir(root)).toEqual([]);
 });
 it('rejects unknown results and malformed JSON instead of retaining them forever', async () => {
   for (const body of ['{', '{"id":"unknown","ok":true}'])
