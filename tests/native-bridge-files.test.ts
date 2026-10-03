@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { MacOSExecutor } from '../src/platform/macos-executor.js';
 import { WindowsExecutor } from '../src/platform/windows-executor.js';
 import { assertSafe } from '../src/platform/operation-safety.js';
@@ -23,9 +23,13 @@ vi.mock('../src/utils/local-path.js', async (importOriginal) => ({
   resolveLocalPath: (path: string) => path,
   getLocalTempRoot: () => probe.root,
 }));
-vi.mock('../src/utils/system-tools.js', () => ({
-  getWindowsSystemTool: () => '/mock/system/cscript.exe',
-}));
+vi.mock('../src/utils/system-tools.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/utils/system-tools.js')>();
+  return {
+    getWindowsSystemTool: (name: Parameters<typeof real.getWindowsSystemTool>[0]) =>
+      name === 'cscript' ? '/mock/system/cscript.exe' : real.getWindowsSystemTool(name),
+  };
+});
 vi.mock('fs/promises', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:fs/promises')>();
   return {
@@ -80,7 +84,8 @@ vi.mock('child_process', async (importOriginal) => {
 let root: string;
 beforeEach(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), 'ps-native-bridge-')));
-  probe.root = join(root, '中文 空%#"apostrophe\'');
+  // Double quotes are legal POSIX filenames, but cannot be created on Windows.
+  probe.root = join(root, process.platform === 'win32' ? '中文 空%#apostrophe\'' : '中文 空%#"apostrophe\'');
   await mkdir(probe.root);
   process.env.PHOTOSHOP_SAFETY_DIR = join(root, 'safety');
   probe.directories = [];
@@ -117,7 +122,7 @@ describe.each(['mac', 'windows'] as const)('%s native bridge files', (platform) 
     );
     for (const wrapper of probe.wrappers) {
       expect(wrapper).toContain('new File(');
-      expect(wrapper).toContain('%E4%B8%AD%E6%96%87%20%E7%A9%BA%25%23%22apostrophe');
+      expect(wrapper).toContain(encodeURIComponent(basename(probe.root)));
       expect(wrapper).not.toContain('decodeURI');
       expect(wrapper).not.toContain('do shell script');
     }

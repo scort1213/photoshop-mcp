@@ -2,6 +2,11 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ exec: vi.fn(), lstat: vi.fn(), readlink: vi.fn(), readdir: vi.fn(), mkdir: vi.fn() }));
 vi.mock('node:child_process', () => ({ execFileSync: mocks.exec }));
 vi.mock('node:fs', () => ({ lstatSync: mocks.lstat, readlinkSync: mocks.readlink, readdirSync: mocks.readdir, mkdirSync: mocks.mkdir }));
+// This suite models macOS mounts, so its joins must use POSIX semantics on Windows too.
+vi.mock('node:path', async (importOriginal) => {
+  const paths = await importOriginal<typeof import('node:path')>();
+  return { ...paths, join: paths.posix.join };
+});
 import { resolveExportPath, resolveGeneratedExportPath } from '../src/lib/export-paths.js';
 const localStats = { isSymbolicLink: () => false, isDirectory: () => true };
 beforeEach(() => {

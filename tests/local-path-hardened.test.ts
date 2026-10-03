@@ -15,6 +15,7 @@ beforeEach(() => {
   vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
   vi.spyOn(process, 'execPath', 'get').mockReturnValue(String.raw`C:\Node\node.exe`);
   vi.stubEnv('SystemRoot', String.raw`C:\Windows`);
+  vi.stubEnv('SystemDrive', 'C:');
   for (const name of ['PHOTOSHOP_MCP_HOME', 'PHOTOSHOP_PATH', 'PHOTOSHOP_SAFETY_DIR', 'PHOTOSHOP_RECOVERY_DIR', 'ProgramFiles', 'ProgramFiles(x86)']) vi.stubEnv(name, undefined);
   mocks.exec.mockImplementation((tool: string) => {
     if (tool === '/sbin/mount') return mounts;
@@ -149,12 +150,22 @@ it('uses only a canonical MCP home for temporary jobs and validates environment 
   expect(() => validateRuntimePaths()).toThrow('local_path_required');
   expect(mocks.lstat.mock.calls.some(call => String(call[0]).startsWith('//host'))).toBe(false);
 });
-it('requires trusted native Windows system tools without PATH or cross-drive fallback', () => {
+it('requires trusted native Windows system tools without PATH or remote fallback', () => {
   vi.stubEnv('SystemRoot', '//host/share/Windows');
   expect(() => getWindowsSystemTool('cscript')).toThrow('no PATH or remote fallback');
   vi.stubEnv('SystemRoot', String.raw`D:\Windows`);
-  expect(() => getWindowsSystemTool('powershell')).toThrow('same system drive');
+  expect(() => getWindowsSystemTool('powershell')).toThrow('SystemDrive');
   expect(mocks.exec).not.toHaveBeenCalled();
+});
+it('allows a local Node runtime on a different drive from Windows', () => {
+  vi.spyOn(process, 'execPath', 'get').mockReturnValue(String.raw`D:\runtimes\node.exe`);
+  expect(getWindowsSystemTool('cscript')).toBe(String.raw`C:\Windows\System32\cscript.exe`);
+  expect(mocks.exec).not.toHaveBeenCalled();
+});
+it.each(['//host/share', 'Z:/', 'C:\\remote'])('rejects invalid SystemDrive before filesystem access: %s', drive => {
+  vi.stubEnv('SystemDrive', drive);
+  expect(() => getWindowsSystemTool('cscript')).toThrow('SystemDrive');
+  expect(mocks.lstat).not.toHaveBeenCalled();
 });
 it.each([String.raw`C:\Windows\System32`, String.raw`C:\Windows\System32\cscript.exe`])('refuses a filesystem link anywhere in the actual system tool path: %s', path => {
   mocks.lstat.mockImplementation((current: string) => ({ ...localStats, isSymbolicLink: () => current === path }));

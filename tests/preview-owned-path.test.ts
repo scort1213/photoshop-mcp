@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, normalize } from 'node:path';
 import { createStateTools } from '../src/tools/state-tools.js';
 import type { PhotoshopConnection } from '../src/platform/connection.js';
 
@@ -44,7 +44,9 @@ it('retains the owned preview directory when execution is uncertain', async () =
   const { tool, path } = await fixture(true);
   const result = await tool.handler({ max_dimension_px: 480 });
   expect(result.isError).toBe(true);
-  expect(JSON.stringify(result)).toContain('outcome_unknown');
-  expect(JSON.stringify(result)).toContain(dirname(path()));
+  const envelope = JSON.parse(result.content.find(item => item.type === 'text')!.text as string);
+  expect(envelope.code).toBe('outcome_unknown');
+  // Compare native paths after parsing JSON, not escaped JSON against an Adobe URI.
+  expect(envelope.message).toContain(normalize(dirname(path())));
   expect((await readFile(path())).byteLength).toBeGreaterThan(0);
 });

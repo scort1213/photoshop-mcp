@@ -8,6 +8,7 @@ import { PhotoshopAPIFactory } from '../src/api/photoshop-api.js';
 import type { PhotoshopConnection } from '../src/platform/connection.js';
 import { runWithDocumentId } from '../src/core/document-target.js';
 import { assertSafe } from '../src/platform/operation-safety.js';
+import { withLocalPathContext } from '../src/utils/local-path.js';
 
 let directory: string;
 beforeEach(async () => {
@@ -44,7 +45,9 @@ async function setup() {
   const executor = new VMAdobe();
   const connection = {
     getPhotoshopInfo: () => ({ version: '23.0.0' }),
-    executeScript: (script: string) => executor.execute(script),
+    // Mirror the server's per-call path context: keep real path checks, but avoid
+    // starting a Windows CIM subprocess for every internal lease-marker access.
+    executeScript: (script: string) => withLocalPathContext(() => executor.execute(script)),
   } as unknown as PhotoshopConnection;
   return { context, executor, api: await new PhotoshopAPIFactory(connection).createAPI() };
 }

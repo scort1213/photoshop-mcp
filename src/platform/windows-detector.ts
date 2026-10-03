@@ -63,10 +63,13 @@ export class WindowsDetector {
           const entries = this.parseRegistryOutput(stdout);
           
           if (entries.length > 0) {
-            // Get the latest version
-            const latest = entries.sort((a, b) => b.version.localeCompare(a.version))[0];
-            const info = await this.checkPath(latest.path);
-            if (info) return info;
+            // Registry entries can survive uninstallations. Try installed
+            // releases in numeric order instead of stopping at a stale entry.
+            entries.sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true }));
+            for (const entry of entries) {
+              const info = await this.checkPath(entry.path);
+              if (info) return info;
+            }
           }
         } catch {
           // Continue to next registry path
@@ -139,8 +142,8 @@ export class WindowsDetector {
 
     const paths: string[] = [];
     
-    // Generate paths for versions 2012-2025
-    for (let year = 2025; year >= 2012; year--) {
+    // Adobe can ship the next named release before the calendar year ends.
+    for (let year = new Date().getFullYear() + 1; year >= 2012; year--) {
       paths.push(
         `${programFiles}\\Adobe\\Adobe Photoshop ${year}\\Photoshop.exe`,
         `${programFilesX86}\\Adobe\\Adobe Photoshop ${year}\\Photoshop.exe`,

@@ -1,0 +1,57 @@
+name: Windows branch validation
+
+on:
+  push:
+    branches: ['codex/windows-*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  automated-checks:
+    name: Automated checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Install the pinned package manager
+        run: npm install --global pnpm@10.33.0 --ignore-scripts --no-audit --no-fund
+
+      - name: Install locked dependencies without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Build the local server
+        run: pnpm run build:server
+
+      # These tests cover code and bridge contracts without connecting to Photoshop.
+      # Live Photoshop and native MCP host acceptance must be recorded separately.
+      - name: Unit and subprocess contract tests
+        run: pnpm run test:unit
+
+      - name: Verify prompt coverage
+        run: pnpm run verify:photoshop-prompts
+
+      - name: Verify packaged imports
+        run: pnpm run verify:pack
+
+      - name: Verify documented tool counts
+        run: pnpm run verify:tool-counts

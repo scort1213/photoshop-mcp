@@ -16,6 +16,7 @@ it.runIf(process.platform === 'win32').each([-2147467259, -2147417846])('preserv
   try {
     const bridge = new WindowsExecutor() as unknown as BridgeInternals;
     const result = join(directory, 'result.txt');
+    await writeFile(join(directory, 'dispatch.ready'), 'ready');
     // Execute the real VBScript error branch without connecting to Adobe.
     const source = bridge.createVBSWrapper(join(directory, 'unused.jsx'), result)
       .replace('Set photoshopApp = CreateObject("Photoshop.Application")',

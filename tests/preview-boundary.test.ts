@@ -1,5 +1,7 @@
 import { expect, it } from 'vitest';
 import { runInNewContext } from 'node:vm';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ExtendScriptSnippets } from '../src/api/extendscript.js';
 import { jpegDimensions } from '../src/utils/jpeg-dimensions.js';
 
@@ -30,7 +32,7 @@ it.each([false,true])('flattens artboards before resizing and cleans up duplicat
     DocumentMode:{RGB:'RGB'},ChangeMode:{RGB:'RGB'},BitsPerChannelType:{EIGHT:'8'},
     ResampleMethod:{BICUBIC:'bicubic'},FormatOptions:{STANDARDBASELINE:'baseline'},SaveOptions:{DONOTSAVECHANGES:'discard'},
   };
-  const run=()=>runInNewContext('(function(){'+ExtendScriptSnippets.exportPreview('/tmp/preview-unit.jpg',480,8)+'})()',context);
+  const run=()=>runInNewContext('(function(){'+ExtendScriptSnippets.exportPreview(join(tmpdir(),'preview-unit.jpg'),480,8)+'})()',context);
   if(fail)expect(run).toThrow('ENOSPC');
   else expect(run()).toMatchObject({width:480,height:120,mimeType:'image/jpeg'});
   expect(operations).toEqual(['flatten','resize','save','close']);

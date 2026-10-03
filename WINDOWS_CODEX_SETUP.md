@@ -2,6 +2,11 @@
 
 # Windows and Codex setup
 
+Current Windows delivery: **1.7.14-windows.1**, on
+`codex/windows-acceptance-20261004`. See [current usage](WINDOWS_USAGE.md) and
+[separate real Windows acceptance](WINDOWS_ACCEPTANCE.md). The remainder of
+this document records earlier installation history.
+
 This fork's `codex/windows-setup` branch was verified on Photoshop 2022
 (23.0.0), Node 24.19.0, and this project's MCP server version 1.7.14.
 

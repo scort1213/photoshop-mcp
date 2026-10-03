@@ -45,7 +45,10 @@ export function parseExtendScriptPayload(raw: unknown): unknown {
         } else if (c in escapes) value += escapes[c];
         else fail();
       } else {
-        if (c < ' ') fail();
+        // Photoshop 23 toSource() can emit literal CRs for native multiline
+        // text. Preserve those characters as data without accepting other raw
+        // control characters or evaluating any part of the legacy payload.
+        if (c < ' ' && c !== '\r') fail();
         value += c;
       }
     }

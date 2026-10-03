@@ -10,7 +10,7 @@ import { resolveLocalPath } from '../src/utils/local-path.js';
 import { jsStringLiteral } from '../src/utils/js-string.js';
 import type { PhotoshopConnection } from '../src/platform/connection.js';
 
-const value = "/tmp/probe' + (sentinel = 1) + '.png";
+const value = join(tmpdir(), "probe' + (sentinel = 1) + '.png");
 const font = "missing' + (sentinel = 1) + 'font";
 const directories: string[] = [];
 afterEach(async () => {
@@ -52,7 +52,7 @@ it('treats every fixed-tool error parameter as data, including formerly injectab
 it('preserves names containing quotes, percent signs, controls, Chinese and emoji exactly', () => {
   const text = "中文 O'Brien 50% \\" + String.fromCharCode(0, 1, 9, 31) + '😀\u2028\u2029';
   expect(runInNewContext(jsStringLiteral(text))).toBe(text);
-  const filePath = "/tmp/中文 O'Brien 50%.png";
+  const filePath = join(tmpdir(), "中文 O'Brien 50%.png");
   const { error } = run(ExtendScriptSnippets.openImage(filePath));
   expect(String(error)).toContain(filePath);
 });
@@ -82,12 +82,14 @@ it('keeps CSV temporary and output paths literal in both rejection branches', as
   const root = await mkdtemp(join(tmpdir(), 'fixed-strings-'));
   directories.push(root);
   vi.stubEnv('PHOTOSHOP_MCP_HOME', join(root, "home' + (sentinel = 1) + '"));
-  const csvPath = join(root, 'input.csv ');
+  // Windows refuses ambiguous trailing spaces; POSIX still exercises literal preservation.
+  const suffix = process.platform === 'win32' ? '' : ' ';
+  const csvPath = join(root, 'input.csv' + suffix);
   await writeFile(csvPath, 'title\nhello\n');
   const scripts: string[] = [];
-  await bindCsvToCards(captureConnection(scripts)).handler({ csv_path: csvPath, output_dir: value + ' ' });
+  await bindCsvToCards(captureConnection(scripts)).handler({ csv_path: csvPath, output_dir: value + suffix });
   const script = scripts[0];
-  expect(script).toContain('output_dir: ' + jsStringLiteral(resolveLocalPath(value + ' ')));
+  expect(script).toContain('output_dir: ' + jsStringLiteral(resolveLocalPath(value + suffix)));
   const start = script.indexOf('var xmlFile = new File(');
   const end = script.indexOf('try {\n      doc.importVariables', start);
   const body = script.slice(start, end);

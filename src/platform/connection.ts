@@ -70,9 +70,10 @@ export class PhotoshopConnection {
         this.photoshopInfo = await this.detector.detect();
       }
 
-      // Windows discovery can return a marketing year from the installation
-      // path. Query the host before applying numeric feature-version gates.
-      if (platform() === 'win32' && /^20\d{2}$/.test(this.photoshopInfo.version)) {
+      // Directory names are not runtime versions, and the COM registration can
+      // point to another installed release. Refresh from the actual Windows
+      // host, including after Photoshop is restarted with a different version.
+      if (platform() === 'win32') {
         const runtimeVersion = String(
           await access.run('read', () => this.executeScript('app.version'))
         ).trim();

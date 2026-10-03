@@ -1,4 +1,6 @@
 import { expect, it, vi } from 'vitest';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ToolRegistry } from '../src/core/tool-registry.js';
 import { CLOUD_DISABLED_TOOLS } from '../src/core/local-policy.js';
 import { PhotoshopMCPServer } from '../src/core/server.js';
@@ -80,7 +82,7 @@ it('omitted cloud parameters execute only content-aware fill and local sky compo
   expect((await bindRemoveDistraction(connection).handler({})).isError).not.toBe(true);
   expect(scripts[0]).toContain("sTID('contentAware')");
   expect(scripts[0]).not.toContain('generative');
-  expect((await bindSkyBlend(connection).handler({ sky_image_path: '/local/sky.jpg' })).isError).not.toBe(true);
+  expect((await bindSkyBlend(connection).handler({ sky_image_path: join(tmpdir(), 'sky.jpg') })).isError).not.toBe(true);
   expect(scripts[1]).toContain('new File(');
   expect(scripts[1]).not.toContain('skyReplacement');
   expect(getVersion).not.toHaveBeenCalled();

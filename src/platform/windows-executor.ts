@@ -1,7 +1,7 @@
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { readFile, writeFile, mkdtemp, mkdir, rm } from 'fs/promises';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { prefixExtendScriptBom } from '../utils/extendscript-file.js';
 import { parseExtendScriptPayload } from '../utils/extendscript-result.js';
 import { Logger } from '../utils/logger.js';
@@ -11,6 +11,7 @@ import {
   runOperationBridge,
   registerInspectionPath,
   operationNeedsInspection,
+  assertOperationActive,
 } from './operation-safety.js';
 import { getLocalTempRoot, resolveLocalPath, toAdobePath } from '../utils/local-path.js';
 import { getWindowsSystemTool } from '../utils/system-tools.js';
@@ -80,7 +81,8 @@ export class WindowsExecutor implements ScriptExecutor {
       // Use VBScript to execute the JSX script via COM
       const vbsPath = join(directory, 'bridge.vbs');
       const resultPath = `${vbsPath}.result`;
-      const vbsScript = this.createVBSWrapper(tempScriptPath, resultPath);
+      const readyPath = join(directory, 'dispatch.ready');
+      const vbsScript = this.createVBSWrapper(tempScriptPath, resultPath, readyPath);
 
       await writeFile(vbsPath, '\uFEFF' + vbsScript, 'utf16le');
 
@@ -97,10 +99,22 @@ export class WindowsExecutor implements ScriptExecutor {
           (error: unknown) => error
         );
         let metadataError: unknown;
+        let publishingReady = false;
         try {
-          if (execution.child.pid) await onChild(execution.child.pid);
+          if (!execution.child.pid) throw new Error('Adobe bridge process id is unavailable');
+          await onChild(execution.child.pid);
+          // The child must not contact Adobe before its PID is durable in the
+          // lease. If this process exits before publication, the child exits
+          // without dispatch; after publication, another client can track it.
+          assertOperationActive();
+          publishingReady = true;
+          await writeFile(readyPath, 'ready', { flag: 'wx' });
         } catch (error) {
           metadataError = error;
+          // Stop only a child that cannot have received authorization. A failed
+          // filesystem write may have created the flag, so that case must keep
+          // its lease until the bridge exits naturally.
+          if (!publishingReady) execution.child.kill();
         }
         const executionError = await completion;
         if (metadataError)
@@ -140,7 +154,12 @@ export class WindowsExecutor implements ScriptExecutor {
     }
   }
 
-  private createVBSWrapper(jsxPath: string, resultPath: string): string {
+  private createVBSWrapper(
+    jsxPath: string,
+    resultPath: string,
+    readyPath = join(dirname(jsxPath), 'dispatch.ready'),
+    gateTimeoutMs = 5000
+  ): string {
     const loadScript = `$.evalFile(new File(${JSON.stringify(toAdobePath(jsxPath))}))`.replace(
       /"/g,
       '""'
@@ -153,6 +172,18 @@ Sub Emit(value)
   output.Close
 End Sub
 On Error Resume Next
+Dim dispatchGate, gateStarted, gateElapsed
+Set dispatchGate = CreateObject("Scripting.FileSystemObject")
+gateStarted = Timer
+Do While Not dispatchGate.FileExists("${readyPath.replace(/"/g, '""')}")
+    gateElapsed = Timer - gateStarted
+    If gateElapsed < 0 Then gateElapsed = gateElapsed + 86400
+    If Err.Number <> 0 Or gateElapsed * 1000 >= ${gateTimeoutMs} Then
+        Emit "ERROR: outcome_unknown: Adobe bridge dispatch authorization was not received; inspect state before recovery"
+        WScript.Quit 1
+    End If
+    WScript.Sleep 25
+Loop
 Dim photoshopApp
 Set photoshopApp = CreateObject("Photoshop.Application")
 
