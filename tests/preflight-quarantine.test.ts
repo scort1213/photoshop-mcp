@@ -10,6 +10,10 @@ import { runWithDocumentId } from '../src/core/document-target.js';
 import { assertSafe } from '../src/platform/operation-safety.js';
 import { withLocalPathContext } from '../src/utils/local-path.js';
 
+// Safety inspection is also a server request: retain real filesystem checks
+// while sharing its drive probe across safetyRoot() and statePath().
+const inspectSafety = () => withLocalPathContext(assertSafe);
+
 let directory: string;
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'ps-preflight-unit-'));
@@ -60,7 +64,7 @@ it.each([undefined, 999])(
       runWithDocumentId(target, () => api.executeScript('writes++; return "changed";'))
     ).rejects.toThrow(target === undefined ? 'ambiguous_document' : 'document_not_found');
     expect(context.writes).toBe(0);
-    await expect(assertSafe()).resolves.toBeUndefined();
+    await expect(inspectSafety()).resolves.toBeUndefined();
     expect(await runWithDocumentId(1, () => api.executeScript('writes++; return "changed";'))).toBe(
       'changed'
     );
@@ -76,29 +80,33 @@ it('keeps a body failure quarantined even when its text resembles a preflight er
     )
   ).rejects.toThrow('body failed');
   expect(context.writes).toBe(1);
-  await expect(assertSafe()).rejects.toThrow('outcome_unknown');
+  await expect(inspectSafety()).rejects.toThrow('outcome_unknown');
 });
 
 it('does not quarantine a transaction rejected by a definite preflight marker', async () => {
   const { context, executor, api } = await setup();
   await expect(
-    executor.runTransaction(() => api.executeScript('writes++; return "changed";'))
+    // Scope the outer transaction before it acquires the lease, just as the
+    // server does. The nested executeScript context starts too late for this.
+    withLocalPathContext(() =>
+      executor.runTransaction(() => api.executeScript('writes++; return "changed";'))
+    )
   ).rejects.toThrow('ambiguous_document');
   expect(context.writes).toBe(0);
-  await expect(assertSafe()).resolves.toBeUndefined();
+  await expect(inspectSafety()).resolves.toBeUndefined();
 });
 
 it('a read preflight rejection never clears a transaction with an earlier completed write', async () => {
   const { context, executor, api } = await setup();
   await expect(
-    executor.runTransaction(async () => {
+    withLocalPathContext(() => executor.runTransaction(async () => {
       await runWithDocumentId(1, () => api.executeScript('writes++; return "changed";'));
       const { access } = await import('../src/platform/operation-safety.js');
       return access.run('read', () =>
         runWithDocumentId(999, () => api.executeScript('return "state";'))
       );
-    })
+    }))
   ).rejects.toThrow('document_not_found');
   expect(context.writes).toBe(1);
-  await expect(assertSafe()).rejects.toThrow('outcome_unknown');
+  await expect(inspectSafety()).rejects.toThrow('outcome_unknown');
 });

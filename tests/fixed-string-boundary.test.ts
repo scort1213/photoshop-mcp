@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { ExtendScriptSnippets } from '../src/api/extendscript.js';
 import { bindSkyBlend } from '../src/tools/recipes/sky-blend.js';
 import { bindCsvToCards } from '../src/tools/recipes/csv-to-cards.js';
-import { resolveLocalPath } from '../src/utils/local-path.js';
+import { resolveLocalPath, withLocalPathContext } from '../src/utils/local-path.js';
 import { jsStringLiteral } from '../src/utils/js-string.js';
 import type { PhotoshopConnection } from '../src/platform/connection.js';
 
@@ -86,13 +86,18 @@ it('keeps CSV temporary and output paths literal in both rejection branches', as
   const suffix = process.platform === 'win32' ? '' : ' ';
   const csvPath = join(root, 'input.csv' + suffix);
   await writeFile(csvPath, 'title\nhello\n');
-  const scripts: string[] = [];
-  await bindCsvToCards(captureConnection(scripts)).handler({ csv_path: csvPath, output_dir: value + suffix });
-  const script = scripts[0];
-  expect(script).toContain('output_dir: ' + jsStringLiteral(resolveLocalPath(value + suffix)));
-  const start = script.indexOf('var xmlFile = new File(');
-  const end = script.indexOf('try {\n      doc.importVariables', start);
-  const body = script.slice(start, end);
-  expect(run(body).result).toMatchObject({ code: 'file_not_found' });
-  expect(run(body, true).result).toMatchObject({ code: 'output_dir_not_writable' });
+  // The server scopes the whole handler, including temporary-file cleanup, in
+  // one path context. Keep real checks without re-probing the same drive for
+  // every generated path and for the equivalent expected path below.
+  await withLocalPathContext(async () => {
+    const scripts: string[] = [];
+    await bindCsvToCards(captureConnection(scripts)).handler({ csv_path: csvPath, output_dir: value + suffix });
+    const script = scripts[0];
+    expect(script).toContain('output_dir: ' + jsStringLiteral(resolveLocalPath(value + suffix)));
+    const start = script.indexOf('var xmlFile = new File(');
+    const end = script.indexOf('try {\n      doc.importVariables', start);
+    const body = script.slice(start, end);
+    expect(run(body).result).toMatchObject({ code: 'file_not_found' });
+    expect(run(body, true).result).toMatchObject({ code: 'output_dir_not_writable' });
+  });
 });
